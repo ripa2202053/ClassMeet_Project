@@ -98,6 +98,7 @@ const VideoRoom = forwardRef(({
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [remoteScreenShareSocketId, setRemoteScreenShareSocketId] = useState(null);
   const [localStream, setLocalStream] = useState(null);
   const [spotlightedId, setSpotlightedId] = useState(null);
   const [streamReady, setStreamReady] = useState(false);
@@ -408,6 +409,16 @@ const VideoRoom = forwardRef(({
       setWhiteboardHostSocketId(null);
     };
 
+    const onScreenShareStarted = ({ socketId }) => {
+      console.log(`[VideoRoom] Remote screen share started by ${socketId}`);
+      setRemoteScreenShareSocketId(socketId);
+    };
+
+    const onScreenShareStopped = () => {
+      console.log('[VideoRoom] Remote screen share stopped');
+      setRemoteScreenShareSocketId(null);
+    };
+
     socket.on('all-users', onAllUsers);
     socket.on('receiving-signal', onReceivingSignal);
     socket.on('signal-received', onSignalReceived);
@@ -419,6 +430,8 @@ const VideoRoom = forwardRef(({
     socket.on('whiteboard-clear', onWhiteboardClear);
     socket.on('whiteboard-stop', onWhiteboardStop);
     socket.on('whiteboard-started', onWhiteboardStarted);
+    socket.on('screen-share-started', onScreenShareStarted);
+    socket.on('screen-share-stopped', onScreenShareStopped);
 
     const onUserMuted = ({ socketId, muted }) => {
       setRemoteStatuses((prev) => ({ ...prev, [socketId]: { ...prev[socketId], muted } }));
@@ -494,6 +507,8 @@ const VideoRoom = forwardRef(({
       socket.off('whiteboard-clear', onWhiteboardClear);
       socket.off('whiteboard-stop', onWhiteboardStop);
       socket.off('whiteboard-started', onWhiteboardStarted);
+      socket.off('screen-share-started', onScreenShareStarted);
+      socket.off('screen-share-stopped', onScreenShareStopped);
       socket.off('user-muted', onUserMuted);
       socket.off('user-camera', onUserCamera);
       socket.off('mute-all', onMuteAll);
@@ -769,7 +784,8 @@ const VideoRoom = forwardRef(({
   // ═════════════════════════════════════════════════════════════════════════
   const activePeers = peers.filter((p) => p.peer && p.peerID !== socket?.id);
   const localMeta = { name: user?.name, role: user?.role };
-  const isInPresentationMode = isScreenSharing || isActivePdfPresenter || !!sharedPdfUrl || isWhiteboardActive;
+  const remoteScreenShareStream = remoteScreenShareSocketId ? remoteStreamsRef.current[remoteScreenShareSocketId] : null;
+  const isInPresentationMode = isScreenSharing || !!remoteScreenShareSocketId || isActivePdfPresenter || !!sharedPdfUrl || isWhiteboardActive;
   const isActivePresenter = isScreenSharing || isActivePdfPresenter || (isWhiteboardActive && whiteboardHostSocketId === socket?.id);
 
   const resolveMeta = (peerId) => {
@@ -807,6 +823,7 @@ const VideoRoom = forwardRef(({
         name={meta.name}
         role={meta.role}
         peerId={peerObj.peerID}
+        remoteStatus={remoteStatuses[peerObj.peerID]}
         isSpotlighted={spotlightedId === peerObj.peerID}
         isActiveSpeaker={activeSpeakerId === peerObj.peerID}
         onClick={user?.role === 'teacher' ? () => handleSpotlight(peerObj.peerID) : undefined}
@@ -875,7 +892,8 @@ const VideoRoom = forwardRef(({
           pdfNumPages={activePdfNumPages}
           isPdfSharing={isActivePdfPresenter || !!sharedPdfUrl}
           pdfFileName={localPdfFile?.name || (sharedPdfBy ? `${sharedPdfBy}'s PDF` : '')}
-          isScreenSharing={isScreenSharing}
+          isScreenSharing={isScreenSharing || !!remoteScreenShareSocketId}
+          remoteScreenShareStream={remoteScreenShareStream}
           canNavigatePdf={canNavigatePdf && isActivePresenter}
           isActivePresenter={isActivePresenter}
           onPdfPrevPage={() => changePdfPage((activePdfPage || 1) - 1)}
@@ -1167,19 +1185,33 @@ const SpotlightView = ({ localTile, activePeers, buildPeerTile, spotlightedId, l
 const PresentationView = ({
   mainRef, localCameraRef, localMeta, isMuted, isCameraOff, isHandRaised,
   activePeers, buildPeerTile, isMobile, activeSpeakerId, cameraStream,
-  pdfUrl, pdfPage, pdfNumPages, isPdfSharing, pdfFileName, isScreenSharing, onPdfLoaded,
+  pdfUrl, pdfPage, pdfNumPages, isPdfSharing, pdfFileName, isScreenSharing, remoteScreenShareStream, onPdfLoaded,
   canNavigatePdf, isActivePresenter, onPdfPrevPage, onPdfNextPage,
   isWhiteboardActive, remoteWhiteboardScene, onWhiteboardChange, onWhiteboardClear, onWhiteboardPointerDown, onWhiteboardPointerUp, onCloseWhiteboard, excalidrawAPIRef, whiteboardRef,
 }) => {
   const [localPdfScale, setLocalPdfScale] = useState(1.0);
   const [hoverSide, setHoverSide] = useState(null);
+  const screenVideoRef = useRef(null);
 
-  // Attach camera stream on mount (fixes timing: PresentationView mounts AFTER startScreenShare sets state)
+  // Attach camera stream on mount
   useEffect(() => {
     if (localCameraRef.current && cameraStream) {
       localCameraRef.current.srcObject = cameraStream;
     }
   }, [cameraStream, localCameraRef]);
+
+  // Attach screen share stream (local or remote)
+  useEffect(() => {
+    if (screenVideoRef.current) {
+      if (mainRef.current && mainRef.current.srcObject) {
+        screenVideoRef.current.srcObject = mainRef.current.srcObject;
+        screenVideoRef.current.play().catch(() => {});
+      } else if (remoteScreenShareStream) {
+        screenVideoRef.current.srcObject = remoteScreenShareStream;
+        screenVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [mainRef, remoteScreenShareStream, isScreenSharing]);
 
   const showPdf = !!pdfUrl && !isScreenSharing && !isWhiteboardActive;
   const showScreen = isScreenSharing && !isWhiteboardActive;
@@ -1191,7 +1223,7 @@ const PresentationView = ({
       <div style={isMobile ? S.presentationMainMobile : S.presentationMainDesktop}>
         {showScreen && (
           <video
-            ref={mainRef}
+            ref={screenVideoRef}
             autoPlay
             playsInline
             muted
@@ -1468,9 +1500,9 @@ const VideoTile = ({
 // ═══════════════════════════════════════════════════════════════════════════════
 // PEER VIDEO — Remote video tile with stream tracking + camera detection
 // ═══════════════════════════════════════════════════════════════════════════════
-const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, onClick, isCompact, onStreamReady }) => {
+const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, onClick, isCompact, onStreamReady, remoteStatus }) => {
   const ref = useRef(null);
-  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [hasVideoTrack, setHasVideoTrack] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1478,22 +1510,34 @@ const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, o
     const attachStream = (stream) => {
       if (cancelled) return;
       const el = ref.current;
-      if (!el) return;
-      if (!stream || stream.getTracks().length === 0) return;
-      el.srcObject = stream;
+      if (!el || !stream) return;
+      
+      try {
+        el.srcObject = stream;
+        el.play().catch(() => {});
+      } catch (e) {
+        console.warn('[PeerVideo] srcObject attach error:', e);
+      }
 
-      const videoTracks = stream.getVideoTracks();
-      const updateCameraState = () => {
+      const vTracks = stream.getVideoTracks();
+      const hasLiveVideo = vTracks.length > 0 && vTracks.some((t) => t.enabled && t.readyState !== 'ended');
+      setHasVideoTrack(hasLiveVideo);
+
+      const updateState = () => {
         if (cancelled) return;
-        const allDisabled = videoTracks.length > 0 && videoTracks.every((t) => !t.enabled);
-        setIsCameraOff(allDisabled || videoTracks.length === 0);
+        const tracks = stream.getVideoTracks();
+        const live = tracks.length > 0 && tracks.some((t) => t.enabled && t.readyState !== 'ended');
+        setHasVideoTrack(live);
       };
-      updateCameraState();
-      videoTracks.forEach((t) => {
-        t.addEventListener('mute', updateCameraState);
-        t.addEventListener('unmute', updateCameraState);
-        t.addEventListener('ended', updateCameraState);
+
+      vTracks.forEach((t) => {
+        t.addEventListener('mute', updateState);
+        t.addEventListener('unmute', updateState);
+        t.addEventListener('ended', updateState);
       });
+
+      stream.addEventListener('addtrack', updateState);
+      stream.addEventListener('removetrack', updateState);
 
       if (onStreamReady) onStreamReady(peerId, stream);
     };
@@ -1525,6 +1569,8 @@ const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, o
       peer.off('error', onError);
     };
   }, [peer, name, peerId, onStreamReady]);
+
+  const isCameraOff = remoteStatus?.cameraOff !== undefined ? remoteStatus.cameraOff : !hasVideoTrack;
 
   return (
     <VideoTile

@@ -170,6 +170,9 @@ io.on('connection', (socket) => {
     if (room.activePdf) {
       socket.emit('pdf-shared', room.activePdf);
     }
+    if (room.activeScreenShare) {
+      socket.emit('screen-share-started', room.activeScreenShare);
+    }
 
     socket.to(roomId).emit('room:participant-joined', {
       socketId: socket.id,
@@ -289,6 +292,25 @@ io.on('connection', (socket) => {
       delete room.activePdf;
     }
     socket.to(roomId).emit('pdf-stopped');
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Screen Sharing synchronization
+  // ─────────────────────────────────────────────────────────────────────────
+  socket.on('screen-share-started', async ({ roomId, userId, socketId }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      room.activeScreenShare = { userId, socketId };
+    }
+    socket.to(roomId).emit('screen-share-started', { userId, socketId });
+  });
+
+  socket.on('screen-share-stopped', async ({ roomId, userId, socketId }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      delete room.activeScreenShare;
+    }
+    socket.to(roomId).emit('screen-share-stopped', { userId, socketId });
   });
 
   // ─────────────────────────────────────────────────────────────────────────

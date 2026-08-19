@@ -167,6 +167,10 @@ io.on('connection', (socket) => {
     socket.emit('all-users', existingUsers);
     socket.emit('room:participants', existingUsers);
 
+    if (room.activePdf) {
+      socket.emit('pdf-shared', room.activePdf);
+    }
+
     socket.to(roomId).emit('room:participant-joined', {
       socketId: socket.id,
       userId,
@@ -263,15 +267,27 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────────────
   // PDF sharing
   // ─────────────────────────────────────────────────────────────────────────
-  socket.on('pdf-share', ({ roomId, pdfData, page, sharedBy }) => {
+  socket.on('pdf-share', async ({ roomId, pdfData, page, sharedBy }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      room.activePdf = { pdfData, page, sharedBy };
+    }
     socket.to(roomId).emit('pdf-shared', { pdfData, page, sharedBy });
   });
 
-  socket.on('pdf-page-change', ({ roomId, page }) => {
+  socket.on('pdf-page-change', async ({ roomId, page }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room && room.activePdf) {
+      room.activePdf.page = page;
+    }
     socket.to(roomId).emit('pdf-page-changed', { page });
   });
 
-  socket.on('pdf-stop', ({ roomId }) => {
+  socket.on('pdf-stop', async ({ roomId }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      delete room.activePdf;
+    }
     socket.to(roomId).emit('pdf-stopped');
   });
 

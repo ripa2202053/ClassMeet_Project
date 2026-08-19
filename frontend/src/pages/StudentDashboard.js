@@ -72,36 +72,39 @@ const StudentDashboard = () => {
 
 const styles = {
   container: {
-    width: '100vw',
+    width: '100%',
+    maxWidth: '1200px',
+    margin: '0 auto',
     minHeight: '100vh',
-    padding: '20px',
+    padding: '20px 16px',
     backgroundColor: '#0a0e1a',
-    boxSizing: 'border-box',
-    margin: 0
+    boxSizing: 'border-box'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '12px',
     marginBottom: '30px',
     backgroundColor: '#0d1b2a',
-    padding: '20px',
+    padding: '16px 20px',
     borderRadius: '10px',
     borderBottom: '2px solid #00d4ff'
   },
-  title: { color: '#00d4ff', fontSize: '24px', margin: 0 },
-  welcome: { marginRight: '15px', fontSize: '16px', color: '#00d4ff' },
-  logoutBtn: { padding: '8px 16px', backgroundColor: '#ff4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' },
-  joinCard: { backgroundColor: '#0d1b2a', padding: '30px', borderRadius: '10px', border: '1px solid #00d4ff', marginBottom: '20px', textAlign: 'center' },
-  cardTitle: { color: '#00d4ff', marginBottom: '10px' },
-  cardDesc: { color: '#7ecfff', marginBottom: '20px' },
-  form: { display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' },
-  input: { padding: '12px', borderRadius: '5px', border: '1px solid #00d4ff', fontSize: '18px', backgroundColor: '#0a0e1a', color: '#00d4ff', textAlign: 'center', letterSpacing: '3px', width: '250px' },
-  button: { padding: '12px 25px', backgroundColor: '#00d4ff', color: '#0a0e1a', border: 'none', borderRadius: '5px', fontSize: '16px', cursor: 'pointer', fontWeight: 'bold' },
+  title: { color: '#00d4ff', fontSize: '22px', margin: 0 },
+  welcome: { marginRight: '12px', fontSize: '15px', color: '#00d4ff' },
+  logoutBtn: { padding: '8px 16px', backgroundColor: '#ff4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
+  joinCard: { backgroundColor: '#0d1b2a', padding: '24px 16px', borderRadius: '10px', border: '1px solid #00d4ff', marginBottom: '20px', textAlign: 'center' },
+  cardTitle: { color: '#00d4ff', marginBottom: '10px', fontSize: '20px' },
+  cardDesc: { color: '#7ecfff', marginBottom: '20px', fontSize: '14px' },
+  form: { display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' },
+  input: { padding: '12px', borderRadius: '5px', border: '1px solid #00d4ff', fontSize: '18px', backgroundColor: '#0a0e1a', color: '#00d4ff', textAlign: 'center', letterSpacing: '3px', width: '100%', maxWidth: '280px', boxSizing: 'border-box' },
+  button: { padding: '12px 25px', backgroundColor: '#00d4ff', color: '#0a0e1a', border: 'none', borderRadius: '5px', fontSize: '16px', cursor: 'pointer', fontWeight: 'bold', minWidth: '140px' },
   error: { color: '#ff4444', marginBottom: '10px' },
-  infoCard: { backgroundColor: '#0d1b2a', padding: '25px', borderRadius: '10px', border: '1px solid #1a3a5c' },
-  list: { paddingLeft: '20px' },
-  listItem: { color: '#7ecfff', marginBottom: '10px', fontSize: '16px' }
+  infoCard: { backgroundColor: '#0d1b2a', padding: '20px 16px', borderRadius: '10px', border: '1px solid #1a3a5c' },
+  list: { paddingLeft: '16px', margin: 0 },
+  listItem: { color: '#7ecfff', marginBottom: '10px', fontSize: '15px', lineHeight: '1.5' }
 };
 
 export default StudentDashboard;

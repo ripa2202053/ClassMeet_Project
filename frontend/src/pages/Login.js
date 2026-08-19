@@ -125,15 +125,19 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    backgroundColor: '#0a0e1a'
+    backgroundColor: '#0a0e1a',
+    padding: '16px',
+    boxSizing: 'border-box'
   },
   card: {
     backgroundColor: '#0d1b2a',
-    padding: '40px',
+    padding: '30px 20px',
     borderRadius: '15px',
     border: '1px solid #00d4ff',
     boxShadow: '0 0 30px rgba(0,212,255,0.2)',
-    width: '400px',
+    width: '92%',
+    maxWidth: '400px',
+    boxSizing: 'border-box',
     textAlign: 'center'
   },
   logo: { fontSize: '50px', margin: '0 0 10px 0' },

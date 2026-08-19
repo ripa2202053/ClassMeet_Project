@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+
 const AttendanceReport = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -18,7 +20,7 @@ const AttendanceReport = () => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
       const { data } = await axios.get(
-        `http://localhost:5000/api/attendance/room/${roomId}`,
+        `${BACKEND_URL}/api/attendance/room/${roomId}`,
         { headers: { authorization: `Bearer ${user.token}` } }
       );
       setRoom(data.room);
@@ -33,7 +35,7 @@ const AttendanceReport = () => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
       const response = await axios.get(
-        `http://localhost:5000/api/export/attendance/${roomId}`,
+        `${BACKEND_URL}/api/export/attendance/${roomId}`,
         {
           headers: { authorization: `Bearer ${user.token}` },
           responseType: 'blob'
@@ -175,13 +177,13 @@ const AttendanceReport = () => {
 
 const styles = {
   container: { width: '100%', padding: '20px', backgroundColor: '#0a0e1a', minHeight: '100vh', boxSizing: 'border-box' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '25px', backgroundColor: '#0d1b2a', padding: '20px', borderRadius: '10px', borderBottom: '2px solid #00d4ff' },
-  title: { color: '#00d4ff', margin: '0 0 5px 0' },
-  roomInfo: { color: '#7ecfff', margin: 0, fontSize: '14px' },
-  headerBtns: { display: 'flex', gap: '10px' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '25px', backgroundColor: '#0d1b2a', padding: '16px 20px', borderRadius: '10px', borderBottom: '2px solid #00d4ff' },
+  title: { color: '#00d4ff', margin: '0 0 5px 0', fontSize: '22px' },
+  roomInfo: { color: '#7ecfff', margin: 0, fontSize: '13px' },
+  headerBtns: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
   exportBtn: { padding: '8px 16px', backgroundColor: '#00ff88', color: '#0a0e1a', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
   backBtn: { padding: '8px 16px', backgroundColor: '#1a3a5c', color: '#00d4ff', border: '1px solid #00d4ff', borderRadius: '5px', cursor: 'pointer' },
-  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '25px' },
+  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '15px', marginBottom: '25px' },
   summaryCard: { backgroundColor: '#0d1b2a', border: '1px solid #00d4ff', borderRadius: '10px', padding: '20px', textAlign: 'center' },
   summaryValue: { color: '#00d4ff', fontSize: '32px', fontWeight: 'bold', display: 'block' },
   summaryLabel: { color: '#7ecfff', fontSize: '14px', display: 'block', marginTop: '5px' },

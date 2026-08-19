@@ -1868,7 +1868,9 @@ const S = {
     position: 'absolute', bottom: '16px', left: '50%',
     transform: 'translateX(-50%)',
     display: 'flex', alignItems: 'center', gap: '6px',
-    padding: '10px 18px',
+    padding: '10px 14px',
+    maxWidth: '95vw', overflowX: 'auto',
+    WebkitOverflowScrolling: 'touch',
     background: 'rgba(10, 14, 26, 0.88)',
     backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
     borderRadius: '16px',
@@ -1877,7 +1879,7 @@ const S = {
     zIndex: 50,
   },
   controlBarCompact: {
-    padding: '6px 14px', gap: '4px', borderRadius: '14px', bottom: '10px',
+    padding: '6px 10px', gap: '4px', borderRadius: '14px', bottom: '10px', maxWidth: '95vw', overflowX: 'auto',
   },
   ctrlGroup: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',

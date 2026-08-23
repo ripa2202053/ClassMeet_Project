@@ -6,7 +6,7 @@ const HISTORY_BUFFER_SIZE = 5;
 const LIVENESS_THRESHOLD = 0.25;
 const INPUT_SIZE = 320; // 320px for high-accuracy glasses & partial face detection
 const SCORE_THRESHOLD = 0.35; // Lowered to 0.35 for glasses/partial face tolerance
-const SPOOF_THRESHOLD_SECONDS = 75;
+const SPOOF_THRESHOLD_SECONDS = 12; // 12 seconds of no blink or rigid photo movement
 const BLINK_EAR_THRESHOLD = 0.20; // EAR drop threshold for blink detection
 
 const KEY_LANDMARK_INDICES = [
@@ -38,6 +38,21 @@ const calculateEAR = (positions) => {
   return (leftEAR + rightEAR) / 2.0;
 };
 
+// ── Anti-Photo Rigidity Test (Detect static photos on phone/paper) ─────────
+const isRigid2DPicture = (frames) => {
+  if (frames.length < 4) return false;
+  const ratios = frames.map((pts) => {
+    if (!pts || pts.length < 58) return 0;
+    const dEyes = Math.hypot(pts[36].x - pts[45].x, pts[36].y - pts[45].y);
+    const dNoseMouth = Math.hypot(pts[30].x - pts[57].x, pts[30].y - pts[57].y);
+    return dEyes > 0 ? dNoseMouth / dEyes : 0;
+  });
+
+  const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  const varSum = ratios.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / ratios.length;
+  return varSum < 0.00004; // Rigid static photo geometry variance
+};
+
 const FaceDetection = ({ stream, onFaceDetected }) => {
   const videoRef = useRef(null);
   const intervalRef = useRef(null);
@@ -46,6 +61,7 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
   const callbackRef = useRef(onFaceDetected);
   const mountedRef = useRef(false);
   const noMovementSecondsRef = useRef(0);
+  const secondsSinceBlinkRef = useRef(0);
   const isSuspiciousRef = useRef(false);
   const dominantEmotionRef = useRef('neutral');
   const wasEyeClosedRef = useRef(false);
@@ -154,6 +170,7 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
         if (!detection) {
           historyRef.current = [];
           noMovementSecondsRef.current = 0;
+          secondsSinceBlinkRef.current = 0;
           isSuspiciousRef.current = false;
           dominantEmotionRef.current = 'neutral';
           callbackRef.current({
@@ -181,9 +198,11 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
             wasEyeClosedRef.current = true;
             blinkCountRef.current += 1;
             isBlinking = true;
+            secondsSinceBlinkRef.current = 0; // Reset blink timer on real eye blink
           }
         } else {
           wasEyeClosedRef.current = false;
+          secondsSinceBlinkRef.current += 1;
         }
 
         // ── Emotion Extraction ──────────────────────────────────────────────
@@ -213,10 +232,15 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
           return;
         }
 
+        // ── Anti-Spoofing Checks (Rigid Photo & Blink Check) ─────────────
         const movement = avgLandmarkMovement(historyRef.current);
-        const isLive = movement > LIVENESS_THRESHOLD || isBlinking;
+        const rigidPhoto = isRigid2DPicture(historyRef.current);
+        const noBlinkTimeout = secondsSinceBlinkRef.current >= SPOOF_THRESHOLD_SECONDS;
 
-        if (isLive) {
+        if (rigidPhoto && noBlinkTimeout) {
+          isSuspiciousRef.current = true;
+        } else if (isBlinking || movement > LIVENESS_THRESHOLD + 0.3) {
+          // Dynamic 3D motion or eye blink confirms real human
           noMovementSecondsRef.current = 0;
           isSuspiciousRef.current = false;
         } else {
@@ -226,8 +250,10 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
           }
         }
 
+        const validRealFace = !isSuspiciousRef.current;
+
         callbackRef.current({
-          isValidFace: true,
+          isValidFace: validRealFace,
           emotion,
           isSuspicious: isSuspiciousRef.current,
           isBlinking,

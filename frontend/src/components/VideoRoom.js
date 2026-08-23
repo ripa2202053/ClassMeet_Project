@@ -91,7 +91,7 @@ const AvatarPlaceholder = ({ name, size }) => {
 const VideoRoom = forwardRef(({
   socket, roomId, user, participants, viewMode, sidebarMode,
   onFaceTime, onMuteChange, onCameraOff, onToggleScreen, onLivenessChange,
-  onToggleSidebar, onLeave, onReaction,
+  onToggleSidebar, onLeave, onReaction, onToggleAttendance, showAttendance, attendanceData,
 }, ref) => {
   // ── State ──────────────────────────────────────────────────────────────
   const [peers, setPeers] = useState([]);
@@ -790,8 +790,36 @@ const VideoRoom = forwardRef(({
 
   const resolveMeta = (peerId) => {
     const meta = participants?.find((p) => p.socketId === peerId);
-    return { name: meta?.name || 'Participant', role: meta?.role || 'student' };
+    return { name: meta?.name || 'Participant', role: meta?.role || 'student', userId: meta?.userId };
   };
+
+  const getDetectedDuration = (peerName, peerId) => {
+    if (!attendanceData?.students) return null;
+    const meta = resolveMeta(peerId);
+    const student = attendanceData.students.find(
+      (s) => (meta.userId && s.studentId === meta.userId) || s.name === meta.name || s.name === peerName
+    );
+    if (!student) return null;
+    if (student.isSuspicious) return { text: '⚠️ Photo Spoof', isSuspicious: true };
+    if (!student.faceTime) return null;
+    const s = Math.floor(student.faceTime);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    return { text: timeStr, isSuspicious: false };
+  };
+
+  const localDetectedDuration = user?.role === 'student' && attendanceData?.students ? (() => {
+    const me = attendanceData.students.find((s) => s.studentId === user._id || s.name === user.name);
+    if (!me) return null;
+    if (me.isSuspicious) return { text: '⚠️ Photo Spoof', isSuspicious: true };
+    if (!me.faceTime) return null;
+    const s = Math.floor(me.faceTime);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    return { text: timeStr, isSuspicious: false };
+  })() : null;
 
   // ═════════════════════════════════════════════════════════════════════════
   // TILE BUILDERS
@@ -807,6 +835,7 @@ const VideoRoom = forwardRef(({
       role={localMeta.role}
       isActiveSpeaker={activeSpeakerId === 'local'}
       isHandRaised={isHandRaised}
+      detectedDuration={localDetectedDuration}
     >
       {user?.role === 'student' && localStream && (
         <FaceDetection stream={localStream} onFaceDetected={handleFaceDetected} />
@@ -816,6 +845,7 @@ const VideoRoom = forwardRef(({
 
   const buildPeerTile = (peerObj, opts = {}) => {
     const meta = resolveMeta(peerObj.peerID);
+    const duration = getDetectedDuration(meta.name, peerObj.peerID);
     return (
       <PeerVideo
         key={peerObj.key || peerObj.peerID}
@@ -823,6 +853,7 @@ const VideoRoom = forwardRef(({
         name={meta.name}
         role={meta.role}
         peerId={peerObj.peerID}
+        detectedDuration={duration}
         remoteStatus={remoteStatuses[peerObj.peerID]}
         isSpotlighted={spotlightedId === peerObj.peerID}
         isActiveSpeaker={activeSpeakerId === peerObj.peerID}
@@ -1422,7 +1453,7 @@ const PresentationView = ({
 // ═══════════════════════════════════════════════════════════════════════════════
 const VideoTile = ({
   videoRef, name, suffix = '', isMuted, isCameraOff, isLocal,
-  role, isSpotlighted, isActiveSpeaker, isHandRaised, isCompact, onClick, children,
+  role, isSpotlighted, isActiveSpeaker, isHandRaised, isCompact, onClick, children, detectedDuration,
 }) => {
   const boxStyle = isCompact
     ? { ...S.videoBox, ...S.videoBoxCompact }
@@ -1483,6 +1514,25 @@ const VideoTile = ({
           {role === 'teacher' && <span style={S.hostBadge}>HOST</span>}
           {isSpotlighted && <span style={S.spotlightBadge}>SPOTLIGHT</span>}
           {isHandRaised && <span style={S.handBadge}>&#9995;</span>}
+          {detectedDuration && (
+            <span style={{
+              background: (typeof detectedDuration === 'object' && detectedDuration.isSuspicious) ? 'rgba(255,68,68,0.25)' : 'rgba(0,255,136,0.18)',
+              color: (typeof detectedDuration === 'object' && detectedDuration.isSuspicious) ? '#ff4444' : '#00ff88',
+              border: `1px solid ${(typeof detectedDuration === 'object' && detectedDuration.isSuspicious) ? 'rgba(255,68,68,0.5)' : 'rgba(0,255,136,0.4)'}`,
+              fontSize: '9px',
+              padding: '2px 6px',
+              borderRadius: '10px',
+              fontWeight: '600',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              marginLeft: '4px',
+            }}>
+              {(typeof detectedDuration === 'object' && detectedDuration.isSuspicious)
+                ? '⚠️ Photo Spoof'
+                : `👁️ ${typeof detectedDuration === 'string' ? detectedDuration : detectedDuration.text}`}
+            </span>
+          )}
         </div>
       </div>
 
@@ -1500,7 +1550,7 @@ const VideoTile = ({
 // ═══════════════════════════════════════════════════════════════════════════════
 // PEER VIDEO — Remote video tile with stream tracking + camera detection
 // ═══════════════════════════════════════════════════════════════════════════════
-const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, onClick, isCompact, onStreamReady, remoteStatus }) => {
+const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, onClick, isCompact, onStreamReady, remoteStatus, detectedDuration }) => {
   const ref = useRef(null);
   const [hasVideoTrack, setHasVideoTrack] = useState(false);
 
@@ -1582,6 +1632,7 @@ const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, o
       isActiveSpeaker={isActiveSpeaker}
       isCompact={isCompact}
       onClick={onClick}
+      detectedDuration={detectedDuration}
     />
   );
 };

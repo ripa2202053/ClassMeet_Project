@@ -143,6 +143,26 @@ const Room = () => {
           ))}
         </div>
         <div style={styles.topRight}>
+          {user?.role === 'teacher' && (
+            <button
+              style={{
+                background: showAttendance ? '#00d4ff22' : '#0f3460',
+                color: '#00d4ff',
+                border: '1px solid #00d4ff66',
+                borderRadius: '6px',
+                padding: '4px 12px',
+                fontSize: '11px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              onClick={() => setShowAttendance((prev) => !prev)}
+            >
+              📊 Attendance Tracker
+            </button>
+          )}
           <div style={styles.recBadge}>
             <div style={styles.recDot} />
             <span style={styles.recText}>REC</span>
@@ -167,6 +187,9 @@ const Room = () => {
             onCameraOff={(o) => { if (o) setCameraOffCount((p) => p + 1); }}
             onLivenessChange={setLivenessStatus}
             onToggleSidebar={toggleSidebar}
+            onToggleAttendance={() => setShowAttendance((prev) => !prev)}
+            showAttendance={showAttendance}
+            attendanceData={attendanceData}
             onLeave={() => navigate(-1)}
             onReaction={() => setReactCount((p) => p + 1)}
           />

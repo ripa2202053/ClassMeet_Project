@@ -107,3 +107,121 @@ img, video, iframe, canvas {
     border-radius: 12px !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VIDEO ROOM SIDEBAR & SLIM SCROLLBARS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.custom-slim-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 212, 255, 0.35) rgba(10, 14, 26, 0.4);
+}
+
+.custom-slim-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-slim-scrollbar::-webkit-scrollbar-track {
+  background: rgba(10, 14, 26, 0.4);
+  border-radius: 4px;
+}
+
+.custom-slim-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.3);
+  border-radius: 4px;
+}
+
+.custom-slim-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.6);
+}
+
+@keyframes pulseWarning {
+  0%, 100% {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 25px rgba(255, 68, 68, 0.25);
+    border-color: rgba(255, 87, 87, 0.6);
+  }
+  50% {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 45px rgba(255, 68, 68, 0.55);
+    border-color: rgba(255, 68, 68, 0.9);
+  }
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-15px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WHITEBOARD EMBEDDABLE & VIDEO CONTROLS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 1. Presenter Whiteboard: Native Interactive Video (YouTube, etc.) */
+.classmeet-whiteboard-presenter .excalidraw__embeddable-container {
+  pointer-events: auto !important;
+  z-index: 5 !important;
+}
+
+.classmeet-whiteboard-presenter .excalidraw__embeddable-container .excalidraw__embeddable-container__inner {
+  pointer-events: auto !important;
+}
+
+.classmeet-whiteboard-presenter .excalidraw__embeddable-container iframe {
+  pointer-events: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* When presenter toggles to Move/Resize Mode */
+.classmeet-whiteboard-presenter.move-mode .excalidraw__embeddable-container,
+.classmeet-whiteboard-presenter.move-mode .excalidraw__embeddable-container .excalidraw__embeddable-container__inner,
+.classmeet-whiteboard-presenter.move-mode .excalidraw__embeddable-container iframe {
+  pointer-events: none !important;
+}
+
+/* Hide annoying hint popup overlay */
+.excalidraw__embeddable-hint {
+  display: none !important;
+}
+
+/* 2. Student Whiteboard: Presentation Only (Completely Hide All Whiteboard Options) */
+.classmeet-whiteboard-student .App-menu__left,
+.classmeet-whiteboard-student .layer-ui__wrapper .footer-center,
+.classmeet-whiteboard-student .layer-ui__wrapper .zoom-actions,
+.classmeet-whiteboard-student .layer-ui__wrapper .undo-redo-animation,
+.classmeet-whiteboard-student .layer-ui__wrapper .App-toolbar,
+.classmeet-whiteboard-student .layer-ui__wrapper .App-toolbar-content,
+.classmeet-whiteboard-student .layer-ui__wrapper .shapes-section,
+.classmeet-whiteboard-student .layer-ui__wrapper .sidebar-trigger,
+.classmeet-whiteboard-student .layer-ui__wrapper .layer-ui__search-inputWrapper,
+.classmeet-whiteboard-student .excalidraw__embeddable-hint,
+.classmeet-whiteboard-student .zen-mode-transition {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Prevent student from modifying or drawing on canvas */
+.classmeet-whiteboard-student .interactive-canvas {
+  pointer-events: none !important;
+}
+
+/* 3. Student Video View Mode: Strictly View-Only (No clicking, pausing, seeking, or YouTube interaction) */
+.classmeet-whiteboard-student .excalidraw__embeddable-container,
+.classmeet-whiteboard-student .excalidraw__embeddable-container__inner,
+.classmeet-whiteboard-student .excalidraw__embeddable-container iframe,
+.classmeet-whiteboard-student iframe.excalidraw__embeddable,
+.classmeet-whiteboard-student .excalidraw__embeddable-container * {
+  pointer-events: none !important;
+  user-select: none !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+
+

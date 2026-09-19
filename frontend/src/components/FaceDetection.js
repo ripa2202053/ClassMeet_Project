@@ -1,98 +1,63 @@
 import { useEffect, useRef } from 'react';
 import * as faceapi from 'face-api.js';
 
-const DETECTION_INTERVAL_MS = 800;
-const HISTORY_BUFFER_SIZE = 5;
-const LIVENESS_THRESHOLD = 0.25;
-const INPUT_SIZE = 320; // 320px for high-accuracy glasses & partial face detection
-const SCORE_THRESHOLD = 0.35; // Lowered to 0.35 for glasses/partial face tolerance
-const SPOOF_THRESHOLD_SECONDS = 12; // 12 seconds of no blink or rigid photo movement
-const BLINK_EAR_THRESHOLD = 0.20; // EAR drop threshold for blink detection
+const DETECTION_INTERVAL_MS = 600;
+const BLINK_CLOSED_THRESHOLD = 0.18; // EAR drops below 0.18
+const BLINK_OPEN_THRESHOLD = 0.22;   // EAR recovers back above 0.22
+const BLINK_TIMEOUT_MS = 20000;      // Must blink within last 20 seconds
 
-const KEY_LANDMARK_INDICES = [
-  0, 8, 16,
-  30,
-  36, 39, 42, 45,
-  48, 54,
-];
-
-const EMOTION_LABELS = ['neutral', 'happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised'];
-
-// ── Eye Aspect Ratio (EAR) Calculation for Blink Detection ─────────────────
+// ── Eye Aspect Ratio (EAR) Calculation ──────────────────────────────────────
+// Left Eye: 36-41, Right Eye: 42-47
+// EAR = (||p2 - p6|| + ||p3 - p5||) / (2 * ||p1 - p4||)
 const calculateEAR = (positions) => {
   if (!positions || positions.length < 68) return 0.3;
   const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
-  // Left Eye (36-41)
+  // Left eye: p1=36, p2=37, p3=38, p4=39, p5=40, p6=41
   const l_v1 = dist(positions[37], positions[41]);
   const l_v2 = dist(positions[38], positions[40]);
   const l_h = dist(positions[36], positions[39]);
-  const leftEAR = (l_v1 + l_v2) / (2.0 * (l_h || 1));
+  const leftEAR = (l_v1 + l_v2) / (2.0 * Math.max(0.1, l_h));
 
-  // Right Eye (42-47)
+  // Right eye: p1=42, p2=43, p3=44, p4=45, p5=46, p6=47
   const r_v1 = dist(positions[43], positions[47]);
   const r_v2 = dist(positions[44], positions[46]);
   const r_h = dist(positions[42], positions[45]);
-  const rightEAR = (r_v1 + r_v2) / (2.0 * (r_h || 1));
+  const rightEAR = (r_v1 + r_v2) / (2.0 * Math.max(0.1, r_h));
 
   return (leftEAR + rightEAR) / 2.0;
-};
-
-// ── Anti-Photo Rigidity Test (Detect static photos on phone/paper) ─────────
-const isRigid2DPicture = (frames) => {
-  if (frames.length < 4) return false;
-  const ratios = frames.map((pts) => {
-    if (!pts || pts.length < 58) return 0;
-    const dEyes = Math.hypot(pts[36].x - pts[45].x, pts[36].y - pts[45].y);
-    const dNoseMouth = Math.hypot(pts[30].x - pts[57].x, pts[30].y - pts[57].y);
-    return dEyes > 0 ? dNoseMouth / dEyes : 0;
-  });
-
-  const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  const varSum = ratios.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / ratios.length;
-  return varSum < 0.00004; // Rigid static photo geometry variance
 };
 
 const FaceDetection = ({ stream, onFaceDetected }) => {
   const videoRef = useRef(null);
   const intervalRef = useRef(null);
-  const historyRef = useRef([]);
   const modelsReadyRef = useRef(false);
   const callbackRef = useRef(onFaceDetected);
   const mountedRef = useRef(false);
-  const noMovementSecondsRef = useRef(0);
-  const secondsSinceBlinkRef = useRef(0);
-  const isSuspiciousRef = useRef(false);
-  const dominantEmotionRef = useRef('neutral');
+
+  // Blink state machine
   const wasEyeClosedRef = useRef(false);
+  const lastBlinkTimeRef = useRef(Date.now());
   const blinkCountRef = useRef(0);
 
   callbackRef.current = onFaceDetected;
 
   useEffect(() => {
-    if (!stream || mountedRef.current) return;
+    if (!stream) return;
     if (stream.getVideoTracks().length === 0) return;
-    mountedRef.current = true;
 
     let cancelled = false;
 
+    // Load ONLY the 2 lightweight models: tinyFaceDetector and faceLandmark68Net
     const loadModels = async () => {
+      if (modelsReadyRef.current) return;
       try {
         const MODEL_URL = process.env.PUBLIC_URL + '/models';
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
-        
-        // Try loading SSD Mobilenet if available for extra accuracy
-        try {
-          await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
-        } catch {
-          /* optional fallback */
-        }
-        
         modelsReadyRef.current = true;
       } catch (err) {
-        console.error('[FaceDetection] Model load failed:', err);
+        console.error('[FaceDetection] Lightweight models load failed:', err);
       }
     };
 
@@ -114,30 +79,6 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
       return video;
     };
 
-    const avgLandmarkMovement = (frames) => {
-      if (frames.length < 2) return Infinity;
-
-      let totalMovement = 0;
-      let comparisons = 0;
-
-      for (let i = 1; i < frames.length; i++) {
-        const prev = frames[i - 1];
-        const curr = frames[i];
-        let frameDist = 0;
-
-        for (const idx of KEY_LANDMARK_INDICES) {
-          const dx = curr[idx].x - prev[idx].x;
-          const dy = curr[idx].y - prev[idx].y;
-          frameDist += Math.sqrt(dx * dx + dy * dy);
-        }
-
-        totalMovement += frameDist / KEY_LANDMARK_INDICES.length;
-        comparisons++;
-      }
-
-      return totalMovement / comparisons;
-    };
-
     const runDetection = async () => {
       if (!modelsReadyRef.current || !videoRef.current || cancelled) return;
 
@@ -145,129 +86,74 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
       if (video.readyState !== 4 || video.videoWidth === 0) return;
 
       try {
-        // 1. Primary High-Accuracy Detection (Score Threshold 0.35, Input Size 320)
-        let detection = await faceapi
+        const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({
-            inputSize: INPUT_SIZE,
-            scoreThreshold: SCORE_THRESHOLD,
+            inputSize: 320,
+            scoreThreshold: 0.35,
           }))
-          .withFaceLandmarks()
-          .withFaceExpressions();
-
-        // 2. Adaptive Fallback for Glasses & Partial Face (Score Threshold 0.28)
-        if (!detection) {
-          detection = await faceapi
-            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({
-              inputSize: 224,
-              scoreThreshold: 0.28,
-            }))
-            .withFaceLandmarks()
-            .withFaceExpressions();
-        }
+          .withFaceLandmarks();
 
         if (cancelled) return;
 
         if (!detection) {
-          historyRef.current = [];
-          noMovementSecondsRef.current = 0;
-          secondsSinceBlinkRef.current = 0;
-          isSuspiciousRef.current = false;
-          dominantEmotionRef.current = 'neutral';
-          callbackRef.current({
-            isValidFace: false,
-            emotion: 'neutral',
-            isSuspicious: false,
-            isBlinking: false,
-            blinkCount: blinkCountRef.current,
-          });
+          // No face detected -> ABSENT / UNVERIFIED
+          if (callbackRef.current) {
+            callbackRef.current({
+              isValidFace: false,
+              isAuthenticallyPresent: false,
+              isSuspicious: false,
+              ear: 0,
+              blinkCount: blinkCountRef.current,
+              secondsSinceLastBlink: Math.floor((Date.now() - lastBlinkTimeRef.current) / 1000),
+            });
+          }
           return;
         }
 
-        const points = detection.landmarks.positions.map((p) => ({ x: p.x, y: p.y }));
-        historyRef.current.push(points);
+        const positions = detection.landmarks.positions;
+        const ear = calculateEAR(positions);
 
-        if (historyRef.current.length > HISTORY_BUFFER_SIZE) {
-          historyRef.current.shift();
-        }
-
-        // ── Eye Blink Detection (EAR) ───────────────────────────────────────
-        const ear = calculateEAR(points);
-        let isBlinking = false;
-        if (ear < BLINK_EAR_THRESHOLD) {
-          if (!wasEyeClosedRef.current) {
-            wasEyeClosedRef.current = true;
-            blinkCountRef.current += 1;
-            isBlinking = true;
-            secondsSinceBlinkRef.current = 0; // Reset blink timer on real eye blink
-          }
-        } else {
+        // ── Valid Blink Logic: Drops below 0.18 and recovers above 0.22 ──
+        if (ear < BLINK_CLOSED_THRESHOLD) {
+          wasEyeClosedRef.current = true;
+        } else if (ear > BLINK_OPEN_THRESHOLD && wasEyeClosedRef.current) {
           wasEyeClosedRef.current = false;
-          secondsSinceBlinkRef.current += 1;
+          blinkCountRef.current += 1;
+          lastBlinkTimeRef.current = Date.now();
         }
 
-        // ── Emotion Extraction ──────────────────────────────────────────────
-        let emotion = 'neutral';
-        if (detection.expressions) {
-          let maxScore = 0;
-          for (const label of EMOTION_LABELS) {
-            const score = detection.expressions[label] || 0;
-            if (score > maxScore) {
-              maxScore = score;
-              emotion = label;
-            }
-          }
-        }
-        dominantEmotionRef.current = emotion;
+        const now = Date.now();
+        const timeSinceBlink = now - lastBlinkTimeRef.current;
+        const hasBlinkedInLast20s = timeSinceBlink <= BLINK_TIMEOUT_MS;
 
-        if (historyRef.current.length < 2) {
-          noMovementSecondsRef.current = 0;
-          isSuspiciousRef.current = false;
+        // Student is considered "Authentically Present" ONLY when face is detected
+        // AND at least one natural blink occurred in the last 20 seconds.
+        const isAuthenticallyPresent = hasBlinkedInLast20s;
+        // If face is detected but zero blinks in 20s, flag as photo spoofing / unverified
+        const isSuspicious = !hasBlinkedInLast20s;
+
+        if (callbackRef.current) {
           callbackRef.current({
             isValidFace: true,
-            emotion,
-            isSuspicious: false,
-            isBlinking,
+            isAuthenticallyPresent,
+            isSuspicious,
+            ear,
             blinkCount: blinkCountRef.current,
+            secondsSinceLastBlink: Math.floor(timeSinceBlink / 1000),
           });
-          return;
         }
-
-        // ── Anti-Spoofing Checks (Rigid Photo & Blink Check) ─────────────
-        const movement = avgLandmarkMovement(historyRef.current);
-        const rigidPhoto = isRigid2DPicture(historyRef.current);
-        const noBlinkTimeout = secondsSinceBlinkRef.current >= SPOOF_THRESHOLD_SECONDS;
-
-        if (rigidPhoto && noBlinkTimeout) {
-          isSuspiciousRef.current = true;
-        } else if (isBlinking || movement > LIVENESS_THRESHOLD + 0.3) {
-          // Dynamic 3D motion or eye blink confirms real human
-          noMovementSecondsRef.current = 0;
-          isSuspiciousRef.current = false;
-        } else {
-          noMovementSecondsRef.current += 1;
-          if (noMovementSecondsRef.current >= SPOOF_THRESHOLD_SECONDS) {
-            isSuspiciousRef.current = true;
-          }
-        }
-
-        const validRealFace = !isSuspiciousRef.current;
-
-        callbackRef.current({
-          isValidFace: validRealFace,
-          emotion,
-          isSuspicious: isSuspiciousRef.current,
-          isBlinking,
-          blinkCount: blinkCountRef.current,
-        });
       } catch (err) {
         console.error('[FaceDetection] Detection error:', err);
-        callbackRef.current({
-          isValidFace: false,
-          emotion: 'neutral',
-          isSuspicious: false,
-          isBlinking: false,
-          blinkCount: blinkCountRef.current,
-        });
+        if (callbackRef.current) {
+          callbackRef.current({
+            isValidFace: false,
+            isAuthenticallyPresent: false,
+            isSuspicious: false,
+            ear: 0,
+            blinkCount: blinkCountRef.current,
+            secondsSinceLastBlink: Math.floor((Date.now() - lastBlinkTimeRef.current) / 1000),
+          });
+        }
       }
     };
 
@@ -286,6 +172,8 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
         return;
       }
 
+      // Initial grace period: start lastBlinkTimeRef at now
+      lastBlinkTimeRef.current = Date.now();
       intervalRef.current = setInterval(runDetection, DETECTION_INTERVAL_MS);
     };
 
@@ -305,12 +193,6 @@ const FaceDetection = ({ stream, onFaceDetected }) => {
         videoRef.current = null;
       }
 
-      historyRef.current = [];
-      modelsReadyRef.current = false;
-      mountedRef.current = false;
-      noMovementSecondsRef.current = 0;
-      isSuspiciousRef.current = false;
-      dominantEmotionRef.current = 'neutral';
       wasEyeClosedRef.current = false;
       blinkCountRef.current = 0;
     };

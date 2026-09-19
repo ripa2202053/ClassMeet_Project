@@ -21,6 +21,7 @@
     "google-auth-library": "^10.6.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.6.1",
+    "pptxgenjs": "^4.0.1",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {

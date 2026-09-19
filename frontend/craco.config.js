@@ -8,6 +8,11 @@ module.exports = {
         crypto: false,
         encoding: false,
       };
+      webpackConfig.ignoreWarnings = [
+        ...(webpackConfig.ignoreWarnings || []),
+        /Can't resolve 'fs'/,
+        /face-api\.js/,
+      ];
       webpackConfig.module.rules.push({
         test: /\.m?js$/,
         resolve: {

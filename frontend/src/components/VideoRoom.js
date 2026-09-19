@@ -123,6 +123,24 @@ const VideoRoom = forwardRef(({
   const latestWhiteboardSceneRef = useRef(null);
   const isLocalDrawingRef = useRef(false);
   const lastWhiteboardEmitRef = useRef(0);
+  const whiteboardTrailingTimerRef = useRef(null);
+  const whiteboardScrollTimerRef = useRef(null);
+  const lastWhiteboardScrollEmitRef = useRef(0);
+
+  // ── Absence Tracking, 3-Strike Warning & Rejoin States ─────────────
+  const [accumulatedAbsentSeconds, setAccumulatedAbsentSeconds] = useState(0);
+  const [isWarningActive, setIsWarningActive] = useState(false);
+  const [warningRemainingSeconds, setWarningRemainingSeconds] = useState(15);
+  const [currentStrike, setCurrentStrike] = useState(1);
+  const [isKicked, setIsKicked] = useState(false);
+  const [rejoinStatus, setRejoinStatus] = useState('idle'); // 'idle' | 'pending' | 'rejected'
+  const [rejoinRequests, setRejoinRequests] = useState([]); // for teacher
+
+  const accumulatedAbsentRef = useRef(0);
+  const isAuthenticallyPresentRef = useRef(true);
+  const isWarningActiveRef = useRef(false);
+  const isKickedRef = useRef(false);
+  const startMediaRef = useRef(null);
 
   // ── Refs ───────────────────────────────────────────────────────────────
   const myVideo = useRef(null);
@@ -144,7 +162,19 @@ const VideoRoom = forwardRef(({
 
   socketRef.current = socket;
 
-  useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
+  useEffect(() => {
+    localStreamRef.current = localStream;
+    if (localStream) {
+      if (myVideo.current && myVideo.current.srcObject !== localStream) {
+        myVideo.current.srcObject = localStream;
+        myVideo.current.play?.().catch(() => {});
+      }
+      if (localCameraRef.current && localCameraRef.current.srcObject !== localStream) {
+        localCameraRef.current.srcObject = localStream;
+        localCameraRef.current.play?.().catch(() => {});
+      }
+    }
+  }, [localStream]);
 
   // Mobile viewport detection
   useEffect(() => {
@@ -387,8 +417,20 @@ const VideoRoom = forwardRef(({
       console.log(`[VideoRoom] Whiteboard scene update from ${startedBy}`);
       latestWhiteboardSceneRef.current = scene;
       setRemoteWhiteboardScene(scene);
-      if (!isLocalDrawingRef.current && excalidrawAPIRef.current && scene?.elements) {
-        excalidrawAPIRef.current.updateScene({ elements: scene.elements });
+      if (excalidrawAPIRef.current && scene?.elements) {
+        const updatePayload = {
+          elements: scene.elements,
+          captureUpdate: 2,
+        };
+        if (scene.appState) {
+          updatePayload.appState = {
+            scrollX: scene.appState.scrollX,
+            scrollY: scene.appState.scrollY,
+            zoom: scene.appState.zoom,
+            ...(scene.appState.viewBackgroundColor ? { viewBackgroundColor: scene.appState.viewBackgroundColor } : {}),
+          };
+        }
+        excalidrawAPIRef.current.updateScene(updatePayload);
       }
     };
 
@@ -459,16 +501,27 @@ const VideoRoom = forwardRef(({
         streamRef.current = stream;
         localStreamRef.current = stream;
         setLocalStream(stream);
-        if (myVideo.current) myVideo.current.srcObject = stream;
+        if (myVideo.current) {
+          myVideo.current.srcObject = stream;
+          myVideo.current.play?.().catch(() => {});
+        }
+        if (localCameraRef.current) {
+          localCameraRef.current.srcObject = stream;
+          localCameraRef.current.play?.().catch(() => {});
+        }
       }
-      if (mode !== 'full') setIsCameraOff(true);
+      if (mode !== 'full') {
+        setIsCameraOff(true);
+      } else {
+        setIsCameraOff(false);
+      }
       setStreamReady(true);
       socket.emit('join-room', roomId, user._id, { name: user.name, role: user.role });
       console.log(`[VideoRoom] ${mode} → joined room ${roomId}`);
       processPending();
     };
 
-    const MEDIA_TIMEOUT = 10000;
+    const MEDIA_TIMEOUT = 15000;
     const withTimeout = (promise, ms) => {
       let timer;
       return Promise.race([
@@ -477,23 +530,91 @@ const VideoRoom = forwardRef(({
       ]).finally(() => clearTimeout(timer));
     };
 
-    withTimeout(navigator.mediaDevices.getUserMedia({ video: true, audio: true }), MEDIA_TIMEOUT)
-      .catch((err) => {
-        console.warn('[VideoRoom] video+audio failed or timed out:', err.message);
-        return withTimeout(navigator.mediaDevices.getUserMedia({ video: false, audio: true }), MEDIA_TIMEOUT)
-          .catch((err2) => {
-            console.warn('[VideoRoom] audio-only also failed or timed out:', err2.message);
-            return null;
-          });
-      })
-      .then((stream) => {
-        if (!stream) return joinRoom(null, 'no-media');
-        if (!stream.getVideoTracks().length) return joinRoom(stream, 'audio-only');
-        joinRoom(stream, 'full');
-      });
+    const acquireAndJoinMedia = async () => {
+      let stream = null;
+      let mode = 'full';
+
+      try {
+        // 1. Try video + audio with ideal constraints
+        stream = await withTimeout(
+          navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            audio: true,
+          }),
+          MEDIA_TIMEOUT
+        );
+      } catch (err1) {
+        console.warn('[VideoRoom] video+audio with constraints failed:', err1.message);
+
+        // 2. Try unconstrained video + audio
+        try {
+          stream = await withTimeout(
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true }),
+            MEDIA_TIMEOUT
+          );
+        } catch (err2) {
+          console.warn('[VideoRoom] unconstrained video+audio failed:', err2.message);
+
+          // 3. Try acquiring video and audio separately (crucial on Windows if driver doesn't support simultaneous open)
+          try {
+            const vStream = await withTimeout(
+              navigator.mediaDevices.getUserMedia({ video: true }),
+              MEDIA_TIMEOUT
+            ).catch((e) => {
+              console.warn('[VideoRoom] video-only failed:', e.message);
+              return null;
+            });
+
+            const aStream = await withTimeout(
+              navigator.mediaDevices.getUserMedia({ audio: true }),
+              MEDIA_TIMEOUT
+            ).catch((e) => {
+              console.warn('[VideoRoom] audio-only failed:', e.message);
+              return null;
+            });
+
+            if (vStream || aStream) {
+              stream = new MediaStream();
+              if (vStream) vStream.getVideoTracks().forEach((t) => stream.addTrack(t));
+              if (aStream) aStream.getAudioTracks().forEach((t) => stream.addTrack(t));
+              mode = vStream ? 'full' : 'audio-only';
+            }
+          } catch (err3) {
+            console.warn('[VideoRoom] separate acquisition failed:', err3.message);
+          }
+
+          // 4. Fallback to audio-only if video is blocked
+          if (!stream) {
+            try {
+              stream = await withTimeout(
+                navigator.mediaDevices.getUserMedia({ video: false, audio: true }),
+                MEDIA_TIMEOUT
+              );
+              mode = 'audio-only';
+            } catch (err4) {
+              console.warn('[VideoRoom] audio-only also failed:', err4.message);
+              stream = null;
+              mode = 'no-media';
+            }
+          }
+        }
+      }
+
+      if (!mountedRef.current) {
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      if (!stream) return joinRoom(null, 'no-media');
+      if (!stream.getVideoTracks().length) return joinRoom(stream, 'audio-only');
+      joinRoom(stream, mode);
+    };
+
+    startMediaRef.current = acquireAndJoinMedia;
+    acquireAndJoinMedia();
 
     return () => {
       mountedRef.current = false;
+      startMediaRef.current = null;
       console.log(`[VideoRoom] Unmounting — cleaning up`);
 
       socket.off('all-users', onAllUsers);
@@ -544,6 +665,7 @@ const VideoRoom = forwardRef(({
       setIsWhiteboardActive(false);
       setRemoteWhiteboardScene(null);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, roomId, user._id, createPeer, addPeer]);
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -560,15 +682,96 @@ const VideoRoom = forwardRef(({
     socket.emit('user-muted', { roomId, userId: user._id, socketId: socket.id, muted: newMuted });
   };
 
-  const toggleCamera = () => {
-    if (!streamRef.current) return;
-    const videoTracks = streamRef.current.getVideoTracks();
-    if (videoTracks.length === 0) return;
-    const newCameraOff = !isCameraOff;
-    videoTracks.forEach((t) => { t.enabled = !newCameraOff; });
-    setIsCameraOff(newCameraOff);
-    if (onCameraOff) onCameraOff(newCameraOff);
-    socket.emit('user-camera', { roomId, userId: user._id, socketId: socket.id, cameraOff: newCameraOff });
+  const toggleCamera = async () => {
+    try {
+      const activeVideoTracks = streamRef.current
+        ? streamRef.current.getVideoTracks().filter((t) => t.readyState === 'live')
+        : [];
+
+      if (isCameraOff) {
+        // User wants to turn camera ON
+        if (activeVideoTracks.length > 0) {
+          activeVideoTracks.forEach((t) => { t.enabled = true; });
+          setIsCameraOff(false);
+          if (onCameraOff) onCameraOff(false);
+          socket.emit('user-camera', { roomId, userId: user._id, socketId: socket.id, cameraOff: false });
+        } else {
+          // No live video track exists yet -> acquire one now!
+          console.log('[VideoRoom] Requesting camera track dynamically...');
+          let newStream = null;
+          try {
+            newStream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            });
+          } catch (e1) {
+            console.warn('[VideoRoom] Ideal constraints failed, trying unconstrained video:', e1.message);
+            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          }
+
+          const newVideoTrack = newStream.getVideoTracks()[0];
+          if (!newVideoTrack) {
+            throw new Error('No video track returned from camera device.');
+          }
+
+          if (!streamRef.current) {
+            streamRef.current = new MediaStream();
+          }
+          streamRef.current.addTrack(newVideoTrack);
+
+          const updatedStream = new MediaStream(streamRef.current.getTracks());
+          localStreamRef.current = updatedStream;
+          setLocalStream(updatedStream);
+
+          if (myVideo.current) {
+            myVideo.current.srcObject = updatedStream;
+            myVideo.current.play?.().catch(() => {});
+          }
+          if (localCameraRef.current) {
+            localCameraRef.current.srcObject = updatedStream;
+            localCameraRef.current.play?.().catch(() => {});
+          }
+
+          // Relay new track to all active peer connections
+          peersRef.current.forEach(({ peer }) => {
+            try {
+              const senders = peer._pc?.getSenders() || [];
+              const videoSender = senders.find((s) => s.track?.kind === 'video');
+              if (videoSender) {
+                videoSender.replaceTrack(newVideoTrack);
+              } else if (peer.replaceTrack && activeVideoTracks[0]) {
+                peer.replaceTrack(activeVideoTracks[0], newVideoTrack, streamRef.current);
+              } else if (peer.addTrack) {
+                peer.addTrack(newVideoTrack, streamRef.current);
+              } else if (peer._pc) {
+                peer._pc.addTrack(newVideoTrack, streamRef.current);
+              }
+            } catch (err) {
+              console.warn('[VideoRoom] Failed to send new video track to peer:', err);
+            }
+          });
+
+          setIsCameraOff(false);
+          if (onCameraOff) onCameraOff(false);
+          socket.emit('user-camera', { roomId, userId: user._id, socketId: socket.id, cameraOff: false });
+          console.log('[VideoRoom] Camera successfully turned on!');
+        }
+      } else {
+        // User wants to turn camera OFF
+        if (activeVideoTracks.length > 0) {
+          activeVideoTracks.forEach((t) => { t.enabled = false; });
+        }
+        setIsCameraOff(true);
+        if (onCameraOff) onCameraOff(true);
+        socket.emit('user-camera', { roomId, userId: user._id, socketId: socket.id, cameraOff: true });
+      }
+    } catch (err) {
+      console.error('[VideoRoom] Error toggling camera:', err);
+      alert(
+        `Unable to access camera: ${err.message || err.name}.\n\n` +
+        `• Please check that camera permission is allowed for this site (click the settings icon next to the URL in the address bar).\n` +
+        `• Make sure no other application (such as Zoom, Microsoft Teams, or another browser window) is currently using your webcam.`
+      );
+    }
   };
 
   const toggleScreenShare = () => {
@@ -665,57 +868,126 @@ const VideoRoom = forwardRef(({
     socket.emit('pdf-stop', { roomId });
   };
 
-  const changePdfPage = (newPage) => {
-    if (newPage < 1) return;
-    if (isPdfSharing) {
-      setLocalPdfPage(newPage);
-      socket.emit('pdf-page-change', { roomId, page: newPage });
-    }
-  };
-
   const isActivePdfPresenter = isPdfSharing && !!localPdfUrl;
+  const isPdfPresenter = isActivePdfPresenter || (user?.role === 'teacher' && (!!sharedPdfUrl || !!localPdfUrl));
   const activePdfUrl = isActivePdfPresenter ? localPdfUrl : sharedPdfUrl;
   const activePdfPage = isActivePdfPresenter ? localPdfPage : sharedPdfPage;
   const activePdfNumPages = isActivePdfPresenter ? localPdfNumPages : sharedPdfNumPages;
   const activePdfBy = isActivePdfPresenter ? user?.name : sharedPdfBy;
-  const canNavigatePdf = isPdfSharing;
+  const canNavigatePdf = isPdfPresenter;
+
+  const changePdfPage = (newPage) => {
+    if (newPage < 1) return;
+    if (activePdfNumPages && newPage > activePdfNumPages) return;
+    setLocalPdfPage(newPage);
+    setSharedPdfPage(newPage);
+    socket.emit('pdf-page-change', { roomId, page: newPage });
+  };
 
   // ═════════════════════════════════════════════════════════════════════════
   // WHITEBOARD (Excalidraw)
   // ═════════════════════════════════════════════════════════════════════════
+  const emitWhiteboardScene = useCallback((elements, appState) => {
+    if (!socket || !roomId) return;
+    const currentAppState = appState || excalidrawAPIRef.current?.getAppState?.();
+    const appStateToSync = currentAppState ? {
+      scrollX: currentAppState.scrollX,
+      scrollY: currentAppState.scrollY,
+      zoom: currentAppState.zoom,
+      viewBackgroundColor: currentAppState.viewBackgroundColor,
+    } : undefined;
+
+    socket.emit('whiteboard-draw', {
+      roomId,
+      scene: {
+        elements,
+        appState: appStateToSync,
+      },
+      socketId: socket.id,
+      startedBy: user?.name,
+    });
+  }, [socket, roomId, user?.name]);
+
   const toggleWhiteboard = () => {
+    if (user?.role !== 'teacher') return;
     if (isWhiteboardActive) {
       closeWhiteboard();
     } else {
       setIsWhiteboardActive(true);
       setWhiteboardHostSocketId(socket.id);
       socket.emit('whiteboard-started', { roomId, startedBy: user?.name, socketId: socket.id });
+      const currentElements = excalidrawAPIRef.current?.getSceneElements?.() || [];
+      const currentAppState = excalidrawAPIRef.current?.getAppState?.();
+      if (currentElements.length > 0) {
+        emitWhiteboardScene(currentElements, currentAppState);
+      }
     }
   };
 
   const closeWhiteboard = () => {
-      setIsWhiteboardActive(false);
-      setRemoteWhiteboardScene(null);
-      setWhiteboardHostSocketId(null);
-      latestWhiteboardSceneRef.current = null;
-      excalidrawAPIRef.current = null;
-      isLocalDrawingRef.current = false;
-      lastWhiteboardEmitRef.current = 0;
+    if (whiteboardTrailingTimerRef.current) {
+      clearTimeout(whiteboardTrailingTimerRef.current);
+    }
+    if (whiteboardScrollTimerRef.current) {
+      clearTimeout(whiteboardScrollTimerRef.current);
+    }
+    setIsWhiteboardActive(false);
+    setRemoteWhiteboardScene(null);
+    setWhiteboardHostSocketId(null);
+    latestWhiteboardSceneRef.current = null;
+    excalidrawAPIRef.current = null;
+    isLocalDrawingRef.current = false;
+    lastWhiteboardEmitRef.current = 0;
+    lastWhiteboardScrollEmitRef.current = 0;
     socket.emit('whiteboard-stop', { roomId });
   };
 
   const handleWhiteboardChange = useCallback((elements, appState) => {
-    if (!socket) return;
+    if (!socket || user?.role !== 'teacher') return;
     const now = Date.now();
-    if (now - lastWhiteboardEmitRef.current < 80) return;
-    lastWhiteboardEmitRef.current = now;
-    socket.emit('whiteboard-draw', {
-      roomId,
-      scene: { elements },
-      socketId: socket.id,
-      startedBy: user?.name,
-    });
-  }, [socket, roomId, user?.name]);
+    if (whiteboardTrailingTimerRef.current) {
+      clearTimeout(whiteboardTrailingTimerRef.current);
+    }
+    // Emit promptly, and guarantee trailing flush so no strokes or elements are ever dropped
+    if (now - lastWhiteboardEmitRef.current >= 60) {
+      lastWhiteboardEmitRef.current = now;
+      emitWhiteboardScene(elements, appState);
+    } else {
+      whiteboardTrailingTimerRef.current = setTimeout(() => {
+        lastWhiteboardEmitRef.current = Date.now();
+        emitWhiteboardScene(elements, appState);
+      }, 70);
+    }
+  }, [socket, user?.role, emitWhiteboardScene]);
+
+  const handleWhiteboardScrollChange = useCallback((scrollX, scrollY, zoom) => {
+    if (!socket || user?.role !== 'teacher' || !excalidrawAPIRef.current) return;
+    const now = Date.now();
+    if (whiteboardScrollTimerRef.current) {
+      clearTimeout(whiteboardScrollTimerRef.current);
+    }
+
+    const syncScroll = () => {
+      if (!excalidrawAPIRef.current) return;
+      const elements = excalidrawAPIRef.current.getSceneElements();
+      const appState = {
+        scrollX,
+        scrollY,
+        zoom,
+      };
+      emitWhiteboardScene(elements, appState);
+    };
+
+    if (now - lastWhiteboardScrollEmitRef.current >= 60) {
+      lastWhiteboardScrollEmitRef.current = now;
+      syncScroll();
+    } else {
+      whiteboardScrollTimerRef.current = setTimeout(() => {
+        lastWhiteboardScrollEmitRef.current = Date.now();
+        syncScroll();
+      }, 70);
+    }
+  }, [socket, user?.role, emitWhiteboardScene]);
 
   const handleWhiteboardPointerDown = useCallback(() => {
     isLocalDrawingRef.current = true;
@@ -723,15 +995,11 @@ const VideoRoom = forwardRef(({
 
   const handleWhiteboardPointerUp = useCallback(() => {
     isLocalDrawingRef.current = false;
-    if (!socket || !excalidrawAPIRef.current) return;
+    if (!socket || !excalidrawAPIRef.current || user?.role !== 'teacher') return;
     const elements = excalidrawAPIRef.current.getSceneElements();
-    socket.emit('whiteboard-draw', {
-      roomId,
-      scene: { elements },
-      socketId: socket.id,
-      startedBy: user?.name,
-    });
-  }, [socket, roomId, user?.name]);
+    const appState = excalidrawAPIRef.current.getAppState();
+    emitWhiteboardScene(elements, appState);
+  }, [socket, user?.role, emitWhiteboardScene]);
 
   const handleWhiteboardClear = useCallback(() => {
     setRemoteWhiteboardScene(null);
@@ -760,16 +1028,152 @@ const VideoRoom = forwardRef(({
   };
 
   // ═════════════════════════════════════════════════════════════════════════
+  // AUTO-KICK & REJOIN WORKFLOW
+  // ═════════════════════════════════════════════════════════════════════════
+  const executeAutoKick = useCallback(() => {
+    console.warn('[VideoRoom] Absence limit exceeded (3 Strikes). Auto-kicking student.');
+    setIsKicked(true);
+    isKickedRef.current = true;
+    setIsWarningActive(false);
+    isWarningActiveRef.current = false;
+    setRejoinStatus('idle');
+
+    // 1. Terminate all local WebRTC tracks immediately
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+    setLocalStream(null);
+    if (myVideo.current) {
+      myVideo.current.srcObject = null;
+    }
+
+    // 2. Destroy all peer connections
+    peersRef.current.forEach(({ peer }) => {
+      try {
+        peer.destroy();
+      } catch (e) {}
+    });
+    peersRef.current = [];
+    setPeers([]);
+    setStreamReady(false);
+    remoteStreamsRef.current = {};
+
+    // 3. Inform backend / peers that student left
+    socket.emit('leave-room', roomId, user._id);
+  }, [socket, roomId, user._id]);
+
+  const rejoinClassroom = useCallback(() => {
+    console.log('[VideoRoom] Re-admitted to classroom. Re-initializing media.');
+    setIsKicked(false);
+    isKickedRef.current = false;
+    setRejoinStatus('idle');
+    accumulatedAbsentRef.current = 0;
+    setAccumulatedAbsentSeconds(0);
+    setIsWarningActive(false);
+    isWarningActiveRef.current = false;
+    setWarningRemainingSeconds(15);
+    setCurrentStrike(1);
+
+    if (startMediaRef.current) {
+      startMediaRef.current();
+    }
+  }, []);
+
+  const handleRequestRejoin = () => {
+    setRejoinStatus('pending');
+    socket.emit('request-rejoin', {
+      roomId,
+      userId: user._id,
+      studentName: user.name,
+    });
+  };
+
+  const handleApproveRejoin = (targetUserId) => {
+    socket.emit('approve-rejoin', { roomId, targetUserId });
+    setRejoinRequests((prev) => prev.filter((r) => r.userId !== targetUserId));
+  };
+
+  const handleRejectRejoin = (targetUserId) => {
+    socket.emit('reject-rejoin', { roomId, targetUserId });
+    setRejoinRequests((prev) => prev.filter((r) => r.userId !== targetUserId));
+  };
+
+  // Student & Teacher Rejoin Event Listeners
+  useEffect(() => {
+    if (!socket) return;
+
+    const onApproveRejoin = ({ targetUserId }) => {
+      if (user?.role === 'student' && targetUserId === user._id) {
+        rejoinClassroom();
+      }
+    };
+
+    const onRejectRejoin = ({ targetUserId }) => {
+      if (user?.role === 'student' && targetUserId === user._id) {
+        setRejoinStatus('rejected');
+      }
+    };
+
+    const onRequestRejoin = ({ roomId: reqRoomId, userId: reqUserId, studentName, socketId }) => {
+      if (user?.role === 'teacher') {
+        setRejoinRequests((prev) => {
+          if (prev.some((r) => r.userId === reqUserId)) return prev;
+          return [...prev, { userId: reqUserId, studentName, socketId, roomId: reqRoomId }];
+        });
+      }
+    };
+
+    socket.on('approve-rejoin', onApproveRejoin);
+    socket.on('reject-rejoin', onRejectRejoin);
+    socket.on('request-rejoin', onRequestRejoin);
+
+    return () => {
+      socket.off('approve-rejoin', onApproveRejoin);
+      socket.off('reject-rejoin', onRejectRejoin);
+      socket.off('request-rejoin', onRequestRejoin);
+    };
+  }, [socket, user._id, user?.role, rejoinClassroom]);
+
+  // Face detection warning system disabled per user request
+  useEffect(() => {
+    setIsWarningActive(false);
+    isWarningActiveRef.current = false;
+  }, []);
+
+  // ═════════════════════════════════════════════════════════════════════════
   // FACE DETECTION (student only)
   // ═════════════════════════════════════════════════════════════════════════
-  const handleFaceDetected = useCallback(({ isValidFace, emotion, isSuspicious }) => {
+  const handleFaceDetected = useCallback(({ isValidFace, emotion, isSuspicious, isAuthenticallyPresent }) => {
+    isAuthenticallyPresentRef.current = !!isAuthenticallyPresent;
+
+    // Fast-dismiss warning modal if student blinks & face detected
+    if (isAuthenticallyPresent && isWarningActiveRef.current) {
+      setIsWarningActive(false);
+      isWarningActiveRef.current = false;
+      setWarningRemainingSeconds(15);
+      setCurrentStrike(1);
+    }
+
     if (onFaceTime) onFaceTime(isValidFace ? 1 : 0);
     if (onLivenessChange) onLivenessChange(isSuspicious ? 'suspicious' : isValidFace ? 'live' : 'no_face');
-    socket.emit('face-detected', {
-      roomId, userId: user._id, socketId: socket.id, studentName: user.name, isValidFace,
-      emotion: emotion || 'neutral',
-      isSuspicious: !!isSuspicious,
-    });
+
+    // CRITICAL PRIVACY RULE: Zero socket alerts, notifications, or badges emitted to teacher or peers during warning phase or when kicked
+    if (!isWarningActiveRef.current && !isKickedRef.current) {
+      socket.emit('face-detected', {
+        roomId, userId: user._id, socketId: socket.id, studentName: user.name, isValidFace,
+        emotion: emotion || 'neutral',
+        isSuspicious: !!isSuspicious,
+      });
+    }
   }, [socket, roomId, user._id, user.name, onFaceTime, onLivenessChange]);
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -786,7 +1190,7 @@ const VideoRoom = forwardRef(({
   const localMeta = { name: user?.name, role: user?.role };
   const remoteScreenShareStream = remoteScreenShareSocketId ? remoteStreamsRef.current[remoteScreenShareSocketId] : null;
   const isInPresentationMode = isScreenSharing || !!remoteScreenShareSocketId || isActivePdfPresenter || !!sharedPdfUrl || isWhiteboardActive;
-  const isActivePresenter = isScreenSharing || isActivePdfPresenter || (isWhiteboardActive && whiteboardHostSocketId === socket?.id);
+  const isActivePresenter = isScreenSharing || isActivePdfPresenter || (isWhiteboardActive && (whiteboardHostSocketId === socket?.id || user?.role === 'teacher'));
 
   const resolveMeta = (peerId) => {
     const meta = participants?.find((p) => p.socketId === peerId);
@@ -836,11 +1240,7 @@ const VideoRoom = forwardRef(({
       isActiveSpeaker={activeSpeakerId === 'local'}
       isHandRaised={isHandRaised}
       detectedDuration={localDetectedDuration}
-    >
-      {user?.role === 'student' && localStream && (
-        <FaceDetection stream={localStream} onFaceDetected={handleFaceDetected} />
-      )}
-    </VideoTile>
+    />
   );
 
   const buildPeerTile = (peerObj, opts = {}) => {
@@ -869,6 +1269,98 @@ const VideoRoom = forwardRef(({
   // ═════════════════════════════════════════════════════════════════════════
   return (
     <div style={S.container}>
+      {/* ── Headless Face Detection (Runs continuously across all views including Presentation) ── */}
+      {user?.role === 'student' && localStream && !isKicked && (
+        <FaceDetection stream={localStream} onFaceDetected={handleFaceDetected} />
+      )}
+
+      {/* ── Auto-Kicked Overlay (Student Only) ────────────────────── */}
+      {isKicked && (
+        <div style={S.kickedOverlay}>
+          <div style={S.kickedCard}>
+            <div style={S.kickedIconContainer}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+              </svg>
+            </div>
+            <h2 style={S.kickedTitle}>Removed for Excessive Absence</h2>
+            <p style={S.kickedDesc}>
+              You have been removed from the classroom after receiving 3 strikes for sustained absence or unverified presence.
+              Your camera and microphone have been disconnected.
+            </p>
+
+            {rejoinStatus === 'idle' && (
+              <div style={S.kickedActions}>
+                <button style={S.rejoinBtn} onClick={handleRequestRejoin}>
+                  Request to Re-join Class
+                </button>
+                <button style={S.kickedLeaveBtn} onClick={onLeave}>
+                  Leave Class
+                </button>
+              </div>
+            )}
+
+            {rejoinStatus === 'pending' && (
+              <div style={S.rejoinPendingBox}>
+                <div style={S.loadingSpinnerSmall} />
+                <span style={S.rejoinPendingText}>Request sent to teacher. Waiting for admission...</span>
+                <button style={{ ...S.kickedLeaveBtn, marginTop: '12px' }} onClick={onLeave}>
+                  Leave Class
+                </button>
+              </div>
+            )}
+
+            {rejoinStatus === 'rejected' && (
+              <div style={S.rejoinRejectedBox}>
+                <p style={S.rejoinRejectedText}>Your re-join request was declined by the teacher.</p>
+                <div style={S.kickedActions}>
+                  <button style={S.rejoinBtn} onClick={handleRequestRejoin}>
+                    Request Again
+                  </button>
+                  <button style={S.kickedLeaveBtn} onClick={onLeave}>
+                    Leave Class
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Teacher Rejoin Requests Toast (Teacher Only) ─────────────── */}
+      {user?.role === 'teacher' && rejoinRequests.length > 0 && (
+        <div style={S.teacherRejoinToastContainer}>
+          {rejoinRequests.map((req) => (
+            <div key={req.userId} style={S.teacherRejoinToast}>
+              <div style={S.teacherToastHeader}>
+                <div style={S.teacherToastAvatar}>
+                  {req.studentName?.[0]?.toUpperCase() || 'S'}
+                </div>
+                <div style={S.teacherToastInfo}>
+                  <div style={S.teacherToastName}>{req.studentName}</div>
+                  <div style={S.teacherToastSub}>Removed for absence &bull; Requesting to re-join</div>
+                </div>
+              </div>
+              <div style={S.teacherToastActions}>
+                <button
+                  style={S.teacherToastApproveBtn}
+                  onClick={() => handleApproveRejoin(req.userId)}
+                >
+                  Admit
+                </button>
+                <button
+                  style={S.teacherToastRejectBtn}
+                  onClick={() => handleRejectRejoin(req.userId)}
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {!streamReady && (
         <div style={S.loadingOverlay}>
           <div style={S.loadingSpinner} />
@@ -925,7 +1417,8 @@ const VideoRoom = forwardRef(({
           pdfFileName={localPdfFile?.name || (sharedPdfBy ? `${sharedPdfBy}'s PDF` : '')}
           isScreenSharing={isScreenSharing || !!remoteScreenShareSocketId}
           remoteScreenShareStream={remoteScreenShareStream}
-          canNavigatePdf={canNavigatePdf && isActivePresenter}
+          isPdfPresenter={isPdfPresenter}
+          canNavigatePdf={isPdfPresenter}
           isActivePresenter={isActivePresenter}
           onPdfPrevPage={() => changePdfPage((activePdfPage || 1) - 1)}
           onPdfNextPage={() => changePdfPage((activePdfPage || 1) + 1)}
@@ -936,12 +1429,15 @@ const VideoRoom = forwardRef(({
           isWhiteboardActive={isWhiteboardActive}
           remoteWhiteboardScene={remoteWhiteboardScene}
           onWhiteboardChange={handleWhiteboardChange}
+          onWhiteboardScrollChange={handleWhiteboardScrollChange}
           onWhiteboardClear={handleWhiteboardClear}
           onWhiteboardPointerDown={handleWhiteboardPointerDown}
           onWhiteboardPointerUp={handleWhiteboardPointerUp}
           onCloseWhiteboard={closeWhiteboard}
           excalidrawAPIRef={excalidrawAPIRef}
           whiteboardRef={whiteboardRef}
+          socket={socket}
+          roomId={roomId}
         />
       )}
 
@@ -1031,18 +1527,20 @@ const VideoRoom = forwardRef(({
               <span style={_lbl}>{isScreenSharing ? 'Stop' : 'Share'}</span>
             </div>
 
-            {/* Whiteboard */}
-            <div style={_grp} onClick={toggleWhiteboard}>
-              <div style={_btn(isWhiteboardActive ? S.ctrlBtnActive : S.ctrlBtnDefault)}>
-                <svg width={svgSize} height={svgSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <path d="M7 7l4 4M12 12l-2 2M15 15l-3-3" />
-                  <circle cx="8.5" cy="8.5" r="0.5" fill="currentColor" />
-                  <circle cx="16" cy="16" r="0.5" fill="currentColor" />
-                </svg>
+            {/* Whiteboard (Teacher Only) */}
+            {user?.role === 'teacher' && (
+              <div style={_grp} onClick={toggleWhiteboard}>
+                <div style={_btn(isWhiteboardActive ? S.ctrlBtnActive : S.ctrlBtnDefault)}>
+                  <svg width={svgSize} height={svgSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <path d="M7 7l4 4M12 12l-2 2M15 15l-3-3" />
+                    <circle cx="8.5" cy="8.5" r="0.5" fill="currentColor" />
+                    <circle cx="16" cy="16" r="0.5" fill="currentColor" />
+                  </svg>
+                </div>
+                <span style={_lbl}>Board</span>
               </div>
-              <span style={_lbl}>Board</span>
-            </div>
+            )}
 
             {/* PDF Share */}
             <div style={_grp} onClick={() => { if (isPdfSharing) stopPdfShare(); else pdfFileInputRef.current?.click(); }}>
@@ -1217,17 +1715,235 @@ const PresentationView = ({
   mainRef, localCameraRef, localMeta, isMuted, isCameraOff, isHandRaised,
   activePeers, buildPeerTile, isMobile, activeSpeakerId, cameraStream,
   pdfUrl, pdfPage, pdfNumPages, isPdfSharing, pdfFileName, isScreenSharing, remoteScreenShareStream, onPdfLoaded,
-  canNavigatePdf, isActivePresenter, onPdfPrevPage, onPdfNextPage,
-  isWhiteboardActive, remoteWhiteboardScene, onWhiteboardChange, onWhiteboardClear, onWhiteboardPointerDown, onWhiteboardPointerUp, onCloseWhiteboard, excalidrawAPIRef, whiteboardRef,
+  canNavigatePdf, isPdfPresenter, isActivePresenter, onPdfPrevPage, onPdfNextPage,
+  isWhiteboardActive, remoteWhiteboardScene, onWhiteboardChange, onWhiteboardScrollChange, onWhiteboardClear, onWhiteboardPointerDown, onWhiteboardPointerUp, onCloseWhiteboard, excalidrawAPIRef, whiteboardRef,
+  socket, roomId,
 }) => {
-  const [localPdfScale, setLocalPdfScale] = useState(1.0);
   const [hoverSide, setHoverSide] = useState(null);
   const screenVideoRef = useRef(null);
+  const pdfWrapperRef = useRef(null);
+  const [wrapperSize, setWrapperSize] = useState({ width: 0, height: 0 });
+  const [pdfPageSize, setPdfPageSize] = useState(null);
+  const [userZoom, setUserZoom] = useState(1.0);
+
+  // PDF Annotation state
+  const annotationCanvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastCoordRef = useRef({ x: 0, y: 0 });
+  const [toolMode, setToolMode] = useState('pen'); // 'pen' | 'highlighter' | 'eraser' | 'off'
+  const [drawColor, setDrawColor] = useState('#ef4444');
+
+  // Whiteboard Video / Media Sync state
+  const [videoInteractionMode, setVideoInteractionMode] = useState('video'); // 'video' | 'move'
+  const [hasEmbedInDom, setHasEmbedInDom] = useState(false);
+  const currentVideoTimeRef = useRef(0);
+
+  const canControlPdf = Boolean(isPdfPresenter ?? canNavigatePdf);
+  const currentPage = pdfPage || 1;
+  const totalPages = pdfNumPages || null;
+  const isLeftDisabled = currentPage <= 1;
+  const isRightDisabled = Boolean(totalPages && currentPage >= totalPages);
+
+  const showPdf = !!pdfUrl && !isScreenSharing && !isWhiteboardActive;
+  const showScreen = isScreenSharing && !isWhiteboardActive;
+  const showWhiteboard = isWhiteboardActive;
+
+  // Responsive measurement: calculate container size so PDF fits viewport above bottom bar
+  useEffect(() => {
+    const el = pdfWrapperRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      if (el) {
+        setWrapperSize({
+          width: el.clientWidth,
+          height: el.clientHeight,
+        });
+      }
+    };
+
+    measure();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          setWrapperSize({ width, height });
+        }
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    } else {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+  }, [showPdf]);
+
+  // Usable area inside presentation wrapper:
+  // Leaves 96px+ clearance at bottom for floating control bar
+  // Leaves 100px horizontally (50px each side) for margin & side arrows
+  const availW = Math.max(280, (wrapperSize.width || 800) - (isMobile ? 24 : 100));
+  const availH = Math.max(200, (wrapperSize.height || 600) - (isMobile ? 100 : 124));
+
+  const nativeW = pdfPageSize?.width || 960;
+  const nativeH = pdfPageSize?.height || 720;
+
+  const fitScale = Math.min(availW / nativeW, availH / nativeH, 2.0);
+  const effectivePdfScale = Math.max(0.4, Number((fitScale * userZoom).toFixed(3)));
+
+  const renderedW = Math.max(10, Math.round(nativeW * effectivePdfScale));
+  const renderedH = Math.max(10, Math.round(nativeH * effectivePdfScale));
+
+  const handlePageLoadSuccess = (page) => {
+    const w = page.originalWidth || page.width;
+    const h = page.originalHeight || page.height;
+    if (w && h) {
+      setPdfPageSize({ width: w, height: h });
+    }
+  };
+
+  // Real-time canvas stroke drawing helper (used both locally and remotely)
+  const drawStroke = useCallback((data) => {
+    const canvas = annotationCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    ctx.save();
+    if (data.isClear) {
+      ctx.clearRect(0, 0, W, H);
+    } else if (data.tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.arc(data.currX * W, data.currY * H, data.width || 18, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = data.color || '#ef4444';
+      ctx.lineWidth = data.width || (data.tool === 'highlighter' ? 14 : 2.5);
+      ctx.globalAlpha = data.alpha !== undefined ? data.alpha : (data.tool === 'highlighter' ? 0.4 : 1.0);
+      ctx.beginPath();
+      ctx.moveTo(data.prevX * W, data.prevY * H);
+      ctx.lineTo(data.currX * W, data.currY * H);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }, []);
+
+  // Listen for real-time annotation strokes from presenter
+  useEffect(() => {
+    if (!socket) return;
+    const handleRemoteDraw = ({ strokeData }) => {
+      if (!strokeData) return;
+      drawStroke(strokeData);
+    };
+    socket.on('pdf-draw-stroke', handleRemoteDraw);
+    return () => {
+      socket.off('pdf-draw-stroke', handleRemoteDraw);
+    };
+  }, [socket, drawStroke]);
+
+  // Clear annotation canvas whenever page changes
+  useEffect(() => {
+    const canvas = annotationCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [currentPage]);
+
+  const getCanvasPoint = (e) => {
+    const canvas = annotationCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
+  const startDrawing = (e) => {
+    if (!canControlPdf || toolMode === 'off') return;
+    const pt = getCanvasPoint(e);
+    if (!pt) return;
+    isDrawingRef.current = true;
+    lastCoordRef.current = { x: pt.x, y: pt.y };
+  };
+
+  const continueDrawing = (e) => {
+    if (!isDrawingRef.current || !canControlPdf || toolMode === 'off') return;
+    const pt = getCanvasPoint(e);
+    if (!pt) return;
+
+    const canvas = annotationCanvasRef.current;
+    if (!canvas) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    if (!W || !H) return;
+
+    const prev = lastCoordRef.current;
+    const curr = { x: pt.x, y: pt.y };
+
+    // Normalized coordinates (0.0 to 1.0)
+    const prevX = prev.x / W;
+    const prevY = prev.y / H;
+    const currX = curr.x / W;
+    const currY = curr.y / H;
+
+    const width = toolMode === 'highlighter' ? 14 : (toolMode === 'eraser' ? 22 : 2.5);
+    const alpha = toolMode === 'highlighter' ? 0.4 : 1.0;
+
+    const strokeData = {
+      prevX,
+      prevY,
+      currX,
+      currY,
+      color: drawColor,
+      width,
+      alpha,
+      tool: toolMode,
+      isClear: false,
+      page: currentPage,
+    };
+
+    drawStroke(strokeData);
+
+    if (socket && roomId) {
+      socket.emit('pdf-draw-stroke', { roomId, strokeData });
+    }
+
+    lastCoordRef.current = curr;
+  };
+
+  const stopDrawing = () => {
+    isDrawingRef.current = false;
+  };
+
+  const handleClearAll = () => {
+    const canvas = annotationCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    if (socket && roomId) {
+      socket.emit('pdf-draw-stroke', {
+        roomId,
+        strokeData: { isClear: true, page: currentPage },
+      });
+    }
+  };
 
   // Attach camera stream on mount
   useEffect(() => {
     if (localCameraRef.current && cameraStream) {
       localCameraRef.current.srcObject = cameraStream;
+      localCameraRef.current.play?.().catch(() => {});
     }
   }, [cameraStream, localCameraRef]);
 
@@ -1244,9 +1960,297 @@ const PresentationView = ({
     }
   }, [mainRef, remoteScreenShareStream, isScreenSharing]);
 
-  const showPdf = !!pdfUrl && !isScreenSharing && !isWhiteboardActive;
-  const showScreen = isScreenSharing && !isWhiteboardActive;
-  const showWhiteboard = isWhiteboardActive;
+  // Check if whiteboard scene has embeddables/videos
+  const hasEmbedInScene = Boolean(
+    remoteWhiteboardScene?.elements?.some(
+      (el) => el.type === 'embeddable' || el.type === 'iframe'
+    ) || excalidrawAPIRef.current?.getSceneElements?.()?.some(
+      (el) => el.type === 'embeddable' || el.type === 'iframe'
+    )
+  );
+  const isVideoPresent = hasEmbedInDom || hasEmbedInScene;
+
+  // Presenter media control actions
+  const handlePlayAll = useCallback(() => {
+    const iframes = document.querySelectorAll('.excalidraw__embeddable-container iframe, iframe.excalidraw__embeddable');
+    iframes.forEach((iframe) => {
+      try {
+        iframe.contentWindow?.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'playVideo',
+          args: [],
+        }), '*');
+      } catch (_) {}
+    });
+    if (socket && roomId) {
+      socket.emit('whiteboard-media-sync', {
+        roomId,
+        action: 'play',
+        currentTime: currentVideoTimeRef.current || 0,
+      });
+    }
+  }, [socket, roomId]);
+
+  const handlePauseAll = useCallback(() => {
+    const iframes = document.querySelectorAll('.excalidraw__embeddable-container iframe, iframe.excalidraw__embeddable');
+    iframes.forEach((iframe) => {
+      try {
+        iframe.contentWindow?.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'pauseVideo',
+          args: [],
+        }), '*');
+      } catch (_) {}
+    });
+    if (socket && roomId) {
+      socket.emit('whiteboard-media-sync', {
+        roomId,
+        action: 'pause',
+        currentTime: currentVideoTimeRef.current || 0,
+      });
+    }
+  }, [socket, roomId]);
+
+  const handleSyncAll = useCallback(() => {
+    if (socket && roomId) {
+      socket.emit('whiteboard-media-sync', {
+        roomId,
+        action: 'force-sync',
+        currentTime: currentVideoTimeRef.current || 0,
+      });
+    }
+  }, [socket, roomId]);
+
+  // Handshake to YouTube iframes to enable postMessage API events and state tracking
+  useEffect(() => {
+    if (!isWhiteboardActive) return;
+    const interval = setInterval(() => {
+      const iframes = document.querySelectorAll('.excalidraw__embeddable-container iframe, iframe.excalidraw__embeddable');
+      if (iframes.length > 0) {
+        setHasEmbedInDom(true);
+        iframes.forEach((iframe) => {
+          try {
+            const win = iframe.contentWindow;
+            if (!win) return;
+            win.postMessage(JSON.stringify({ event: 'listening' }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'] }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'addEventListener', args: ['infoDelivery'] }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime', args: [] }), '*');
+            if (isActivePresenter) {
+              win.postMessage(JSON.stringify({ event: 'command', func: 'getPlayerState', args: [] }), '*');
+            }
+          } catch (_) {}
+        });
+      } else {
+        setHasEmbedInDom(false);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isWhiteboardActive, isActivePresenter]);
+
+  // Listen for YouTube player events to auto-sync play/pause from teacher
+  const lastReportedPlayerStateRef = useRef(-1);
+
+  useEffect(() => {
+    const handleWindowMessage = (e) => {
+      try {
+        let data = e.data;
+        if (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch (_) { return; }
+        }
+        if (!data) return;
+
+        if (data.info && typeof data.info.currentTime === 'number') {
+          currentVideoTimeRef.current = data.info.currentTime;
+        }
+
+        let playerState = null;
+        if (data.event === 'onStateChange') {
+          playerState = typeof data.info === 'number' ? data.info : (typeof data.data === 'number' ? data.data : null);
+        } else if (data.info && typeof data.info.playerState === 'number') {
+          playerState = data.info.playerState;
+        }
+
+        if (playerState !== null && isActivePresenter && socket && roomId) {
+          const time = (data.info && typeof data.info.currentTime === 'number') ? data.info.currentTime : (currentVideoTimeRef.current || 0);
+          if (playerState === 1 && lastReportedPlayerStateRef.current !== 1) {
+            lastReportedPlayerStateRef.current = 1;
+            console.log('[VideoRoom] Teacher playing YouTube video at', time);
+            socket.emit('whiteboard-media-sync', {
+              roomId,
+              action: 'play',
+              currentTime: time,
+            });
+          } else if (playerState === 2 && lastReportedPlayerStateRef.current !== 2) {
+            lastReportedPlayerStateRef.current = 2;
+            console.log('[VideoRoom] Teacher paused YouTube video at', time);
+            socket.emit('whiteboard-media-sync', {
+              roomId,
+              action: 'pause',
+              currentTime: time,
+            });
+          }
+        }
+      } catch (_) {}
+    };
+
+    window.addEventListener('message', handleWindowMessage);
+    return () => {
+      window.removeEventListener('message', handleWindowMessage);
+    };
+  }, [isActivePresenter, socket, roomId]);
+
+  // Periodic heartbeat sync while teacher is actively playing
+  useEffect(() => {
+    if (!isActivePresenter || !isWhiteboardActive || !socket || !roomId) return;
+    const syncInterval = setInterval(() => {
+      if (lastReportedPlayerStateRef.current === 1) {
+        socket.emit('whiteboard-media-sync', {
+          roomId,
+          action: 'sync',
+          currentTime: currentVideoTimeRef.current || 0,
+        });
+      }
+    }, 3000);
+    return () => clearInterval(syncInterval);
+  }, [isActivePresenter, isWhiteboardActive, socket, roomId]);
+
+  // Student listener for synchronized video playback
+  const lastStudentMediaStateRef = useRef({ action: 'pause', currentTime: 0 });
+
+  useEffect(() => {
+    if (!socket || isActivePresenter) return;
+
+    const executePlayerSync = (action, currentTime) => {
+      const iframes = document.querySelectorAll(
+        '.classmeet-whiteboard-student .excalidraw__embeddable-container iframe, .excalidraw__embeddable-container iframe, iframe.excalidraw__embeddable'
+      );
+      iframes.forEach((iframe) => {
+        try {
+          const win = iframe.contentWindow;
+          if (!win) return;
+
+          win.postMessage(JSON.stringify({ event: 'listening' }), '*');
+
+          if (typeof currentTime === 'number' && (action === 'play' || action === 'force-sync')) {
+            win.postMessage(JSON.stringify({
+              event: 'command',
+              func: 'seekTo',
+              args: [currentTime, true],
+            }), '*');
+          }
+
+          if (action === 'play') {
+            win.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+          } else if (action === 'pause') {
+            win.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+          } else if (action === 'sync') {
+            const studentTime = currentVideoTimeRef.current || 0;
+            if (typeof currentTime === 'number' && Math.abs(studentTime - currentTime) > 2.5) {
+              win.postMessage(JSON.stringify({
+                event: 'command',
+                func: 'seekTo',
+                args: [currentTime, true],
+              }), '*');
+            }
+            win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+          } else if (action === 'force-sync') {
+            if (typeof currentTime === 'number') {
+              win.postMessage(JSON.stringify({
+                event: 'command',
+                func: 'seekTo',
+                args: [currentTime, true],
+              }), '*');
+            }
+            win.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+            win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+          }
+        } catch (_) {}
+      });
+    };
+
+    const handleMediaSync = ({ action, currentTime }) => {
+      console.log('[VideoRoom] Student received media sync:', action, currentTime);
+      lastStudentMediaStateRef.current = { action, currentTime };
+      executePlayerSync(action, currentTime);
+      setTimeout(() => executePlayerSync(action, currentTime), 400);
+      setTimeout(() => executePlayerSync(action, currentTime), 1000);
+    };
+
+    // User interaction unlock listener for browser autoplay policy
+    const handleUserGestureUnlock = () => {
+      const state = lastStudentMediaStateRef.current;
+      if (state.action === 'play' || state.action === 'sync' || state.action === 'force-sync') {
+        executePlayerSync('play', state.currentTime);
+      }
+    };
+    window.addEventListener('pointerdown', handleUserGestureUnlock, { passive: true });
+
+    socket.on('whiteboard-media-sync', handleMediaSync);
+    return () => {
+      socket.off('whiteboard-media-sync', handleMediaSync);
+      window.removeEventListener('pointerdown', handleUserGestureUnlock);
+    };
+  }, [socket, isActivePresenter]);
+
+  // Fit and center all elements in viewport (teacher tool & initial centering)
+  const handleFitAndCenter = useCallback(() => {
+    if (excalidrawAPIRef.current) {
+      const elements = excalidrawAPIRef.current.getSceneElements();
+      if (elements && elements.length > 0) {
+        excalidrawAPIRef.current.scrollToContent(elements, {
+          fitToViewport: true,
+          viewportZoomFactor: 0.82,
+          animate: true,
+          duration: 250,
+        });
+      }
+    }
+  }, [excalidrawAPIRef]);
+
+  // Sync remote whiteboard scene (elements & scroll/zoom) to student Excalidraw in real time
+  const hasAutoCenteredRef = useRef(false);
+
+  useEffect(() => {
+    if (!isActivePresenter && excalidrawAPIRef?.current && remoteWhiteboardScene?.elements) {
+      try {
+        const updatePayload = {
+          elements: remoteWhiteboardScene.elements,
+          captureUpdate: 2,
+        };
+        const hasCustomScroll = remoteWhiteboardScene.appState &&
+          ((typeof remoteWhiteboardScene.appState.scrollY === 'number' && remoteWhiteboardScene.appState.scrollY !== 0) ||
+           (typeof remoteWhiteboardScene.appState.scrollX === 'number' && remoteWhiteboardScene.appState.scrollX !== 0));
+
+        if (remoteWhiteboardScene.appState) {
+          updatePayload.appState = {
+            scrollX: remoteWhiteboardScene.appState.scrollX,
+            scrollY: remoteWhiteboardScene.appState.scrollY,
+            zoom: remoteWhiteboardScene.appState.zoom,
+            ...(remoteWhiteboardScene.appState.viewBackgroundColor ? { viewBackgroundColor: remoteWhiteboardScene.appState.viewBackgroundColor } : {}),
+          };
+        }
+        excalidrawAPIRef.current.updateScene(updatePayload);
+
+        // If teacher has not manually panned, auto-fit content so video never drops behind bottom bar
+        if (!hasCustomScroll && !hasAutoCenteredRef.current && remoteWhiteboardScene.elements.length > 0) {
+          hasAutoCenteredRef.current = true;
+          setTimeout(() => {
+            try {
+              excalidrawAPIRef.current?.scrollToContent(remoteWhiteboardScene.elements, {
+                fitToViewport: true,
+                viewportZoomFactor: 0.82,
+                animate: false,
+              });
+            } catch (_) {}
+          }, 100);
+        }
+      } catch (_) {}
+    }
+  }, [isActivePresenter, remoteWhiteboardScene, excalidrawAPIRef]);
 
   return (
     <div style={isMobile ? S.presentationMobile : S.presentationDesktop}>
@@ -1263,86 +2267,339 @@ const PresentationView = ({
         )}
 
         {showPdf && (
-          <div style={S.pdfPresentationContainer}>
-            <Document
-              file={pdfUrl}
-              onLoadSuccess={({ numPages: n }) => {
-                if (onPdfLoaded) onPdfLoaded(n);
-              }}
-              loading={
-                <div style={S.pdfLoading}>
-                  <div style={S.loadingSpinnerSmall} />
-                  <span>Loading PDF...</span>
-                </div>
-              }
-              error={
-                <div style={S.pdfError}>
-                  Failed to load PDF. Please try another file.
-                </div>
-              }
-            >
-              <Page
-                pageNumber={pdfPage || 1}
-                scale={localPdfScale}
-                loading={
-                  <div style={S.pdfLoading}>
-                    <div style={S.loadingSpinnerSmall} />
-                    <span>Loading page...</span>
-                  </div>
-                }
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-              />
-            </Document>
-
-            {/* ── Left Arrow (Previous Page) ── */}
-            {canNavigatePdf && pdfPage > 1 && (
+          <div ref={pdfWrapperRef} style={S.pdfPresentationWrapper}>
+            <div style={S.pdfPresentationContainer}>
               <div
                 style={{
-                  ...S.pdfSideArrow,
-                  left: '8px', top: '50%', transform: 'translateY(-50%)',
-                  opacity: hoverSide === 'left' ? 0.95 : 0.35,
+                  ...S.pdfDocumentWrapper,
+                  position: 'relative',
+                  width: `${renderedW}px`,
+                  height: `${renderedH}px`,
                 }}
-                onMouseEnter={() => setHoverSide('left')}
-                onMouseLeave={() => setHoverSide(null)}
-                onClick={(e) => { e.stopPropagation(); onPdfPrevPage(); }}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                <Document
+                  file={pdfUrl}
+                  onLoadSuccess={({ numPages: n }) => {
+                    if (onPdfLoaded) onPdfLoaded(n);
+                  }}
+                  loading={
+                    <div style={S.pdfLoading}>
+                      <div style={S.loadingSpinnerSmall} />
+                      <span>Loading PDF...</span>
+                    </div>
+                  }
+                  error={
+                    <div style={S.pdfError}>
+                      Failed to load PDF. Please try another file.
+                    </div>
+                  }
+                >
+                  <Page
+                    pageNumber={currentPage}
+                    scale={effectivePdfScale}
+                    onLoadSuccess={handlePageLoadSuccess}
+                    loading={
+                      <div style={S.pdfLoading}>
+                        <div style={S.loadingSpinnerSmall} />
+                        <span>Loading page...</span>
+                      </div>
+                    }
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                  />
+                </Document>
+
+                {/* ── Overlay Annotation Canvas (1:1 with PDF) ── */}
+                <canvas
+                  ref={annotationCanvasRef}
+                  width={renderedW}
+                  height={renderedH}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: `${renderedW}px`,
+                    height: `${renderedH}px`,
+                    zIndex: 30,
+                    pointerEvents: canControlPdf && toolMode !== 'off' ? 'auto' : 'none',
+                    cursor: canControlPdf && toolMode !== 'off'
+                      ? (toolMode === 'eraser' ? 'cell' : 'crosshair')
+                      : 'default',
+                    touchAction: 'none',
+                  }}
+                  onMouseDown={startDrawing}
+                  onMouseMove={continueDrawing}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                  onTouchMove={(e) => { e.preventDefault(); continueDrawing(e); }}
+                  onTouchEnd={(e) => { e.preventDefault(); stopDrawing(e); }}
+                />
+              </div>
+            </div>
+
+            {/* ── Presenter Floating Annotation Toolbar (Top Center) ── */}
+            {canControlPdf && (
+              <div style={{ ...S.pdfAnnotationToolbar, ...(isMobile ? { top: '48px' } : null) }}>
+                {/* Pointer (Drawing Off) */}
+                <button
+                  type="button"
+                  title="Cursor / Select (Drawing Off)"
+                  style={{
+                    ...S.pdfToolBtn,
+                    ...(toolMode === 'off' ? S.pdfToolBtnActive : null),
+                  }}
+                  onClick={() => setToolMode('off')}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M3 3l7 18 3-7 7-3L3 3z" />
+                  </svg>
+                </button>
+
+                {/* Pen Tool */}
+                <button
+                  type="button"
+                  title="Pen Tool (Stroke: 2px, 100% Opacity)"
+                  style={{
+                    ...S.pdfToolBtn,
+                    ...(toolMode === 'pen' ? S.pdfToolBtnActive : null),
+                  }}
+                  onClick={() => setToolMode('pen')}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                    <path d="M2 2l7.586 7.586" />
+                  </svg>
+                </button>
+
+                {/* Highlighter Tool */}
+                <button
+                  type="button"
+                  title="Highlighter Tool (Stroke: 14px, 40% Opacity)"
+                  style={{
+                    ...S.pdfToolBtn,
+                    ...(toolMode === 'highlighter' ? S.pdfToolBtnActive : null),
+                  }}
+                  onClick={() => setToolMode('highlighter')}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M14 2l4 4L7 17H3v-4L14 2z" />
+                    <path d="M3 22h18" strokeWidth="2.5" stroke="#eab308" />
+                  </svg>
+                </button>
+
+                {/* Divider */}
+                <div style={S.pdfToolDivider} />
+
+                {/* Color Palette */}
+                <div style={S.pdfColorPalette}>
+                  {[
+                    { color: '#ef4444', name: 'Red' },
+                    { color: '#3b82f6', name: 'Blue' },
+                    { color: '#22c55e', name: 'Green' },
+                    { color: '#eab308', name: 'Yellow' },
+                    { color: '#0f172a', name: 'Black' },
+                  ].map((c) => {
+                    const isSelected = drawColor === c.color && toolMode !== 'off' && toolMode !== 'eraser';
+                    return (
+                      <div
+                        key={c.color}
+                        title={c.name}
+                        onClick={() => {
+                          setDrawColor(c.color);
+                          if (toolMode === 'off' || toolMode === 'eraser') {
+                            setToolMode('pen');
+                          }
+                        }}
+                        style={{
+                          ...S.pdfColorDot,
+                          background: c.color,
+                          border: c.color === '#0f172a' ? '1px solid rgba(255,255,255,0.4)' : 'none',
+                          transform: isSelected ? 'scale(1.25)' : 'scale(1)',
+                          boxShadow: isSelected
+                            ? `0 0 0 2px #0a0e1a, 0 0 0 4px ${c.color === '#0f172a' ? '#38bdf8' : c.color}`
+                            : 'none',
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Divider */}
+                <div style={S.pdfToolDivider} />
+
+                {/* Eraser Tool */}
+                <button
+                  type="button"
+                  title="Eraser (Erase strokes)"
+                  style={{
+                    ...S.pdfToolBtn,
+                    ...(toolMode === 'eraser' ? S.pdfToolBtnActive : null),
+                  }}
+                  onClick={() => setToolMode('eraser')}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L18 15" />
+                    <path d="M18 15L11 8" />
+                  </svg>
+                </button>
+
+                {/* Clear All */}
+                <button
+                  type="button"
+                  title="Clear All Annotations"
+                  style={S.pdfToolBtnDanger}
+                  onClick={handleClearAll}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  <span style={{ fontSize: '11px', fontWeight: '600' }}>Clear</span>
+                </button>
+              </div>
+            )}
+
+            {/* ── Left Navigation Arrow (Previous Page) ── */}
+            {canControlPdf && (
+              <button
+                type="button"
+                aria-label="Previous Page"
+                title="Previous Page"
+                disabled={isLeftDisabled}
+                style={{
+                  ...S.pdfNavArrow,
+                  ...S.pdfNavArrowLeft,
+                  ...(isLeftDisabled
+                    ? S.pdfNavArrowDisabled
+                    : hoverSide === 'left'
+                    ? S.pdfNavArrowHover
+                    : null),
+                }}
+                onMouseEnter={() => !isLeftDisabled && setHoverSide('left')}
+                onMouseLeave={() => setHoverSide(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!isLeftDisabled && onPdfPrevPage) {
+                    onPdfPrevPage();
+                  }
+                }}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-              </div>
+              </button>
             )}
 
-            {/* ── Right Arrow (Next Page) ── */}
-            {canNavigatePdf && (!pdfNumPages || pdfPage < pdfNumPages) && (
-              <div
+            {/* ── Right Navigation Arrow (Next Page) ── */}
+            {canControlPdf && (
+              <button
+                type="button"
+                aria-label="Next Page"
+                title="Next Page"
+                disabled={isRightDisabled}
                 style={{
-                  ...S.pdfSideArrow,
-                  right: '8px', top: '50%', transform: 'translateY(-50%)',
-                  opacity: hoverSide === 'right' ? 0.95 : 0.35,
+                  ...S.pdfNavArrow,
+                  ...S.pdfNavArrowRight,
+                  ...(isRightDisabled
+                    ? S.pdfNavArrowDisabled
+                    : hoverSide === 'right'
+                    ? S.pdfNavArrowHover
+                    : null),
                 }}
-                onMouseEnter={() => setHoverSide('right')}
+                onMouseEnter={() => !isRightDisabled && setHoverSide('right')}
                 onMouseLeave={() => setHoverSide(null)}
-                onClick={(e) => { e.stopPropagation(); onPdfNextPage(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!isRightDisabled && onPdfNextPage) {
+                    onPdfNextPage();
+                  }
+                }}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
-              </div>
+              </button>
             )}
 
-            {/* ── Page Badge ── */}
-            <div style={S.pdfPageBadge}>
-              Page {pdfPage || 1} of {pdfNumPages || '?'}
+            {/* ── Top Bar: Page Counter & Zoom Controls ── */}
+            <div style={S.pdfTopBar}>
+              <div style={S.pdfPageBadge}>
+                <span style={S.pdfPageText}>
+                  Page {currentPage} of {totalPages || '?'}
+                </span>
+                <span style={S.pdfBadgeDivider} />
+                <button
+                  type="button"
+                  aria-label="Zoom Out"
+                  title="Zoom Out"
+                  style={S.pdfZoomBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUserZoom((z) => Math.max(0.6, Number((z - 0.15).toFixed(2))));
+                  }}
+                >
+                  &minus;
+                </button>
+                <span style={S.pdfZoomPct}>
+                  {Math.round(userZoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  aria-label="Zoom In"
+                  title="Zoom In"
+                  style={S.pdfZoomBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUserZoom((z) => Math.min(2.5, Number((z + 0.15).toFixed(2))));
+                  }}
+                >
+                  &#43;
+                </button>
+                {userZoom !== 1.0 && (
+                  <button
+                    type="button"
+                    aria-label="Reset Zoom to Fit"
+                    title="Fit to Screen"
+                    style={S.pdfZoomResetBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUserZoom(1.0);
+                    }}
+                  >
+                    Fit
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {showWhiteboard && (
           <div
+            className={`${isActivePresenter ? "classmeet-whiteboard-presenter" : "classmeet-whiteboard-student"} ${videoInteractionMode === 'move' ? 'move-mode' : ''}`}
             style={S.whiteboardContainer}
-            onPointerDown={onWhiteboardPointerDown}
-            onPointerUp={onWhiteboardPointerUp}
+            onPointerDown={isActivePresenter ? onWhiteboardPointerDown : undefined}
+            onPointerUp={isActivePresenter ? onWhiteboardPointerUp : undefined}
           >
             <Suspense fallback={
               <div style={S.whiteboardLoading}>
@@ -1352,12 +2609,39 @@ const PresentationView = ({
             }>
               <ExcalidrawWrapper
                 ref={whiteboardRef}
-                excalidrawAPI={(api) => { excalidrawAPIRef.current = api; }}
-                initialData={remoteWhiteboardScene ? { elements: remoteWhiteboardScene.elements } : undefined}
-                onChange={onWhiteboardChange}
+                excalidrawAPI={(api) => {
+                  excalidrawAPIRef.current = api;
+                  if (!isActivePresenter && remoteWhiteboardScene?.elements && remoteWhiteboardScene.elements.length > 0) {
+                    try {
+                      const updatePayload = {
+                        elements: remoteWhiteboardScene.elements,
+                        captureUpdate: 2,
+                      };
+                      if (remoteWhiteboardScene.appState) {
+                        updatePayload.appState = {
+                          scrollX: remoteWhiteboardScene.appState.scrollX,
+                          scrollY: remoteWhiteboardScene.appState.scrollY,
+                          zoom: remoteWhiteboardScene.appState.zoom,
+                          ...(remoteWhiteboardScene.appState.viewBackgroundColor ? { viewBackgroundColor: remoteWhiteboardScene.appState.viewBackgroundColor } : {}),
+                        };
+                      }
+                      api.updateScene(updatePayload);
+                    } catch (_) {}
+                  }
+                }}
+                initialData={remoteWhiteboardScene ? {
+                  elements: remoteWhiteboardScene.elements,
+                  appState: remoteWhiteboardScene.appState ? {
+                    scrollX: remoteWhiteboardScene.appState.scrollX,
+                    scrollY: remoteWhiteboardScene.appState.scrollY,
+                    zoom: remoteWhiteboardScene.appState.zoom,
+                  } : undefined,
+                } : undefined}
+                onChange={isActivePresenter ? onWhiteboardChange : undefined}
+                onScrollChange={isActivePresenter ? onWhiteboardScrollChange : undefined}
                 viewModeEnabled={!isActivePresenter}
                 zenModeEnabled={false}
-                UIOptions={{
+                UIOptions={isActivePresenter ? {
                   canvasActions: {
                     changeViewBackgroundColor: true,
                     clearCanvas: true,
@@ -1370,11 +2654,130 @@ const PresentationView = ({
                   tools: {
                     image: false,
                   },
+                } : {
+                  canvasActions: {
+                    changeViewBackgroundColor: false,
+                    clearCanvas: false,
+                    loadScene: false,
+                    toggleTheme: false,
+                    saveToActiveFile: false,
+                    export: false,
+                    saveAsImage: false,
+                  },
+                  tools: {
+                    image: false,
+                  },
                 }}
                 theme="light"
                 name="ClassMeet Whiteboard"
               />
             </Suspense>
+
+            {/* ── Presenter Video Sync Toolbar (top-center, presenter only when video/embed exists) ── */}
+            {isActivePresenter && isVideoPresent && (
+              <div style={{ ...S.whiteboardMediaToolbar, ...(isMobile ? { top: '48px' } : null) }}>
+                <div style={S.mediaToolbarBadge}>
+                  <span style={S.mediaPulseDot} />
+                  <span>Video Control</span>
+                </div>
+
+                <div style={S.mediaToolbarGroup}>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.mediaModeBtn,
+                      ...(videoInteractionMode === 'video' ? S.mediaModeBtnActive : null),
+                    }}
+                    onClick={() => setVideoInteractionMode('video')}
+                    title="Control video directly (Play, Pause, Seek like YouTube)"
+                  >
+                    🎬 Video Mode
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.mediaModeBtn,
+                      ...(videoInteractionMode === 'move' ? S.mediaModeBtnActive : null),
+                    }}
+                    onClick={() => setVideoInteractionMode('move')}
+                    title="Move or resize video element on whiteboard"
+                  >
+                    ✋ Move/Resize
+                  </button>
+                </div>
+
+                <div style={S.mediaDivider} />
+
+                <div style={S.mediaToolbarGroup}>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.mediaActionBtn,
+                      background: 'rgba(16, 185, 129, 0.16)',
+                      borderColor: 'rgba(16, 185, 129, 0.4)',
+                      color: '#34d399',
+                    }}
+                    onClick={handleFitAndCenter}
+                    title="Fit & center video on all screens"
+                  >
+                    🎯 Fit & Center
+                  </button>
+                  <button
+                    type="button"
+                    style={S.mediaActionBtn}
+                    onClick={handlePlayAll}
+                    title="Play video on all screens"
+                  >
+                    ▶ Play for All
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.mediaActionBtn,
+                      background: 'rgba(239, 68, 68, 0.16)',
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                      color: '#f87171',
+                    }}
+                    onClick={handlePauseAll}
+                    title="Pause video on all screens"
+                  >
+                    ⏸ Pause for All
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      ...S.mediaActionBtn,
+                      background: 'rgba(0, 212, 255, 0.16)',
+                      borderColor: 'rgba(0, 212, 255, 0.4)',
+                      color: '#00d4ff',
+                    }}
+                    onClick={handleSyncAll}
+                    title="Sync students to current time"
+                  >
+                    🔄 Sync Time
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Student View-Only Notification Badge ── */}
+            {!isActivePresenter && isVideoPresent && (
+              <div style={{ ...S.studentViewOnlyBadge, ...(isMobile ? { top: '48px' } : null) }}>
+                <span style={S.studentViewOnlyDot} />
+                <span>🔒 View Mode &bull; Controlled by Teacher</span>
+              </div>
+            )}
+
+            {/* ── Student View-Only Protective Shield (blocks all canvas and embed interaction) ── */}
+            {!isActivePresenter && (
+              <div
+                style={S.studentWhiteboardShield}
+                title="View Only (Teacher is presenting)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              />
+            )}
 
             {/* ── Circular Close Button (top-right, presenter only) ── */}
             {isActivePresenter && (
@@ -1392,6 +2795,7 @@ const PresentationView = ({
           </div>
         )}
 
+
         {/* Label — hidden when whiteboard active (Excalidraw has its own toolbar) */}
         {!showWhiteboard && (
         <div style={S.presentationLabel}>
@@ -1408,8 +2812,11 @@ const PresentationView = ({
 
       </div>
 
-      {/* ── Filmstrip ──────────────────────────────────────────── */}
-      <div style={isMobile ? S.filmstripHorizontal : S.filmstripVertical}>
+      {/* ── Filmstrip / Right-Hand Participant Sidebar ────────── */}
+      <div
+        className="custom-slim-scrollbar"
+        style={isMobile ? S.filmstripHorizontal : S.filmstripVertical}
+      >
         {/* Local camera tile */}
         <div style={isMobile ? S.filmstripTileMobile : S.filmstripTileDesktop}>
           <video
@@ -1417,7 +2824,10 @@ const PresentationView = ({
             autoPlay
             playsInline
             muted
-            style={S.filmstripVideo}
+            style={{
+              ...S.filmstripVideo,
+              display: isCameraOff ? 'none' : 'block',
+            }}
           />
           {isCameraOff && (
             <div style={S.filmstripAvatar}>
@@ -1644,8 +3054,15 @@ const PeerVideo = ({ peer, name, role, peerId, isSpotlighted, isActiveSpeaker, o
 // ═══════════════════════════════════════════════════════════════════════════════
 const S = {
   container: {
-    width: '100%', height: '100%',
-    display: 'flex', flexDirection: 'column', position: 'relative',
+    width: '100%',
+    height: '100%',
+    maxHeight: '100%',
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+    overflow: 'hidden',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
 
@@ -1672,7 +3089,18 @@ const S = {
   },
 
   // ── Video Grid ──────────────────────────────────────────────────────
-  videoGrid: { display: 'grid', gap: '10px', width: '100%', flex: 1, alignContent: 'center' },
+  videoGrid: {
+    display: 'grid',
+    gap: '10px',
+    width: '100%',
+    flex: 1,
+    minHeight: 0,
+    maxHeight: 'calc(100vh - 120px)',
+    overflowY: 'auto',
+    alignContent: 'center',
+    padding: '4px 4px 85px 4px',
+    boxSizing: 'border-box',
+  },
 
   // ── Video Box ───────────────────────────────────────────────────────
   videoBox: {
@@ -1684,7 +3112,15 @@ const S = {
     aspectRatio: '16/9',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  videoBoxCompact: { width: '160px', height: '120px', flexShrink: 0, aspectRatio: 'auto' },
+  videoBoxCompact: {
+    width: '100%',
+    height: '110px',
+    minHeight: '110px',
+    maxHeight: '110px',
+    flexShrink: 0,
+    aspectRatio: 'auto',
+    boxSizing: 'border-box',
+  },
   videoBoxSpotlight: { width: '100%', height: '100%', aspectRatio: 'auto' },
   videoBoxActiveSpeaker: {},
   tileSpotlight: {
@@ -1760,16 +3196,17 @@ const S = {
   // ── Speaker / Spotlight Layout ──────────────────────────────────────
   speakerContainer: {
     display: 'flex', flexDirection: 'column', gap: '10px',
-    width: '100%', height: '100%',
+    width: '100%', height: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)',
+    flex: 1, minHeight: 0, overflow: 'hidden',
   },
   speakerMain: {
     flex: 1, minHeight: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    position: 'relative',
+    position: 'relative', overflow: 'hidden',
   },
   filmstrip: {
     display: 'flex', gap: '8px', overflowX: 'auto', overflowY: 'hidden',
-    padding: '4px 0', flexShrink: 0, scrollbarWidth: 'thin',
+    padding: '4px 0 85px 0', flexShrink: 0, scrollbarWidth: 'thin',
     scrollbarColor: 'rgba(0,212,255,0.3) transparent',
   },
   spotlightPrompt: {
@@ -1782,36 +3219,72 @@ const S = {
     borderRadius: '8px', border: '1px solid rgba(0,212,255,0.2)',
   },
 
-  // ── Presentation View (Screen Share) ───────────────────────────────
+  // ── Presentation View (Screen Share, PDF, Whiteboard) ───────────────
   presentationDesktop: {
-    display: 'flex', gap: '10px', width: '100%', flex: 1, minHeight: 0,
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: '12px',
+    width: '100%',
+    height: 'calc(100vh - 2rem)',
+    maxHeight: 'calc(100vh - 2rem)',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+    boxSizing: 'border-box',
   },
   presentationMobile: {
-    display: 'flex', flexDirection: 'column', gap: '8px',
-    width: '100%', flex: 1, minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    width: '100%',
+    height: '100%',
+    maxHeight: 'calc(100vh - 110px)',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+    boxSizing: 'border-box',
   },
   presentationMainDesktop: {
-    flex: 1, minWidth: 0, position: 'relative',
-    display: 'flex', flexDirection: 'column',
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    height: '100%',
+    maxHeight: '100%',
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
     backgroundColor: '#0a0e1a',
     border: '1px solid rgba(0,212,255,0.12)',
-    borderRadius: '12px', overflow: 'hidden',
+    borderRadius: '12px',
+    overflow: 'hidden',
     boxShadow: '0 0 24px rgba(0,212,255,0.06)',
+    boxSizing: 'border-box',
   },
   presentationMainMobile: {
-    flex: 1, minHeight: 0, position: 'relative',
-    display: 'flex', flexDirection: 'column',
+    flex: 1,
+    minHeight: 0,
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
     backgroundColor: '#0a0e1a',
     border: '1px solid rgba(0,212,255,0.12)',
-    borderRadius: '12px', overflow: 'hidden',
+    borderRadius: '12px',
+    overflow: 'hidden',
     boxShadow: '0 0 24px rgba(0,212,255,0.06)',
+    boxSizing: 'border-box',
   },
   presentationVideo: {
-    width: '100%', height: '100%', objectFit: 'contain', display: 'block',
+    width: '100%',
+    height: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
+    display: 'block',
   },
   presentationLabel: {
     position: 'absolute', top: '10px', left: '10px',
     display: 'flex', alignItems: 'center', gap: '6px',
+    zIndex: 5,
   },
   presentationLabelText: {
     color: '#00ff88', fontSize: '11px', fontWeight: '600',
@@ -1821,11 +3294,39 @@ const S = {
   },
 
   // ── PDF Presentation ────────────────────────────────────────────────────
+  pdfPresentationWrapper: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    boxSizing: 'border-box',
+    borderRadius: '12px',
+  },
   pdfPresentationContainer: {
-    width: '100%', height: '100%',
-    overflow: 'auto', display: 'flex', justifyContent: 'center',
-    alignItems: 'flex-start', padding: '20px',
+    width: '100%',
+    height: '100%',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'auto',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '16px 20px 96px 20px',
     backgroundColor: '#060d16',
+    boxSizing: 'border-box',
+  },
+  pdfDocumentWrapper: {
+    margin: 'auto',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+    borderRadius: '4px',
+    overflow: 'hidden',
   },
   pdfLoading: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -1840,29 +3341,209 @@ const S = {
   pdfError: {
     color: '#ff4444', padding: '60px 20px', textAlign: 'center', fontSize: '13px',
   },
-  pdfSideArrow: {
-    position: 'absolute', width: '36px', height: '36px', borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.1)',
-    cursor: 'pointer', transition: 'opacity 0.2s, background 0.2s',
-    zIndex: 10, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+  pdfNavArrow: {
+    position: 'absolute',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    zIndex: 40,
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: 'rgba(0, 0, 0, 0.6)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    color: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.6)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    transition: 'all 0.2s ease',
+    outline: 'none',
+    userSelect: 'none',
+    padding: 0,
+  },
+  pdfNavArrowLeft: {
+    left: '1rem',
+  },
+  pdfNavArrowRight: {
+    right: '1rem',
+  },
+  pdfNavArrowHover: {
+    background: 'rgba(0, 0, 0, 0.85)',
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    transform: 'translateY(-50%) scale(1.08)',
+    boxShadow: '0 6px 20px rgba(0, 0, 0, 0.8)',
+  },
+  pdfNavArrowDisabled: {
+    opacity: 0.3,
+    cursor: 'not-allowed',
+    pointerEvents: 'none',
+  },
+  pdfTopBar: {
+    position: 'absolute',
+    top: '12px',
+    right: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    zIndex: 40,
   },
   pdfPageBadge: {
-    position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)',
-    color: '#fff', fontSize: '11px', fontWeight: '500',
-    background: 'rgba(0,0,0,0.45)', padding: '4px 12px',
-    borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-    whiteSpace: 'nowrap', zIndex: 10, letterSpacing: '0.3px',
+    color: '#fff',
+    fontSize: '12px',
+    fontWeight: '500',
+    background: 'rgba(10, 14, 26, 0.82)',
+    padding: '4px 10px',
+    borderRadius: '16px',
+    border: '1px solid rgba(255, 255, 255, 0.18)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    whiteSpace: 'nowrap',
+    letterSpacing: '0.3px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    userSelect: 'none',
+  },
+  pdfPageText: {
+    fontSize: '11px',
+    fontWeight: '500',
+    color: '#e2e8f0',
+  },
+  pdfBadgeDivider: {
+    width: '1px',
+    height: '12px',
+    background: 'rgba(255, 255, 255, 0.2)',
+    margin: '0 2px',
+  },
+  pdfZoomBtn: {
+    width: '22px',
+    height: '22px',
+    borderRadius: '4px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    color: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: '14px',
+    lineHeight: '1',
+    padding: 0,
+    outline: 'none',
+    transition: 'all 0.15s ease',
+  },
+  pdfZoomPct: {
+    fontSize: '11px',
+    color: '#7ecfff',
+    fontWeight: '600',
+    minWidth: '32px',
+    textAlign: 'center',
+  },
+  pdfZoomResetBtn: {
+    padding: '2px 7px',
+    borderRadius: '4px',
+    background: 'rgba(0, 212, 255, 0.15)',
+    border: '1px solid rgba(0, 212, 255, 0.3)',
+    color: '#00d4ff',
+    cursor: 'pointer',
+    fontSize: '10px',
+    fontWeight: '600',
+    outline: 'none',
+    transition: 'all 0.15s ease',
+  },
+
+  // ── PDF Annotation Toolbar ─────────────────────────────────────────────
+  pdfAnnotationToolbar: {
+    position: 'absolute',
+    top: '12px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    background: 'rgba(10, 14, 26, 0.92)',
+    border: '1px solid rgba(0, 212, 255, 0.3)',
+    borderRadius: '24px',
+    padding: '4px 10px',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(0, 212, 255, 0.12)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    zIndex: 45,
+    userSelect: 'none',
+  },
+  pdfToolBtn: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '50%',
+    background: 'transparent',
+    border: '1px solid transparent',
+    color: '#94a3b8',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    padding: 0,
+    outline: 'none',
+    transition: 'all 0.15s ease',
+  },
+  pdfToolBtnActive: {
+    background: 'rgba(0, 212, 255, 0.22)',
+    borderColor: 'rgba(0, 212, 255, 0.55)',
+    color: '#00d4ff',
+    boxShadow: '0 0 10px rgba(0, 212, 255, 0.35)',
+  },
+  pdfToolBtnDanger: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '3px 8px',
+    borderRadius: '14px',
+    background: 'rgba(239, 68, 68, 0.15)',
+    border: '1px solid rgba(239, 68, 68, 0.35)',
+    color: '#f87171',
+    cursor: 'pointer',
+    outline: 'none',
+    transition: 'all 0.15s ease',
+  },
+  pdfToolDivider: {
+    width: '1px',
+    height: '16px',
+    background: 'rgba(255, 255, 255, 0.15)',
+    margin: '0 2px',
+  },
+  pdfColorPalette: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '0 4px',
+  },
+  pdfColorDot: {
+    width: '16px',
+    height: '16px',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
   },
 
   // ── Whiteboard ─────────────────────────────────────────────────────────
   whiteboardContainer: {
-    width: '100%', height: '80vh', flex: 1,
-    position: 'relative', overflow: 'hidden',
-    display: 'flex', borderRadius: '8px',
+    width: '100%',
+    height: '100%',
+    flex: 1,
+    minHeight: 0,
+    maxHeight: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+    display: 'flex',
+    borderRadius: '8px',
     backgroundColor: '#ffffff',
-    pointerEvents: 'auto', zIndex: 1,
+    pointerEvents: 'auto',
+    zIndex: 1,
+    boxSizing: 'border-box',
   },
   whiteboardLoading: {
     width: '100%', height: '100%',
@@ -1872,7 +3553,7 @@ const S = {
   },
   whiteboardCloseCircle: {
     position: 'absolute', top: '16px', right: '16px',
-    width: '36px', height: '36px', zIndex: 20,
+    width: '36px', height: '36px', zIndex: 50,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     borderRadius: '50%',
     background: 'rgba(255,255,255,0.95)',
@@ -1880,28 +3561,170 @@ const S = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
     cursor: 'pointer', transition: 'all 0.2s',
   },
+  whiteboardMediaToolbar: {
+    position: 'absolute',
+    top: '12px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(10, 14, 26, 0.94)',
+    border: '1px solid rgba(0, 212, 255, 0.35)',
+    borderRadius: '24px',
+    padding: '4px 12px',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.75), 0 0 16px rgba(0, 212, 255, 0.15)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    zIndex: 48,
+    userSelect: 'none',
+  },
+  mediaToolbarBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#38bdf8',
+    letterSpacing: '0.3px',
+    paddingRight: '6px',
+    borderRight: '1px solid rgba(255, 255, 255, 0.15)',
+  },
+  mediaPulseDot: {
+    width: '7px',
+    height: '7px',
+    borderRadius: '50%',
+    background: '#ef4444',
+    boxShadow: '0 0 8px #ef4444',
+  },
+  mediaToolbarGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
+  },
+  mediaModeBtn: {
+    padding: '3px 9px',
+    borderRadius: '12px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    color: '#cbd5e1',
+    cursor: 'pointer',
+    fontSize: '11px',
+    fontWeight: '500',
+    outline: 'none',
+    transition: 'all 0.15s ease',
+    whiteSpace: 'nowrap',
+  },
+  mediaModeBtnActive: {
+    background: 'rgba(0, 212, 255, 0.22)',
+    borderColor: 'rgba(0, 212, 255, 0.6)',
+    color: '#00d4ff',
+    boxShadow: '0 0 10px rgba(0, 212, 255, 0.3)',
+    fontWeight: '600',
+  },
+  mediaActionBtn: {
+    padding: '3px 9px',
+    borderRadius: '12px',
+    background: 'rgba(16, 185, 129, 0.16)',
+    border: '1px solid rgba(16, 185, 129, 0.4)',
+    color: '#34d399',
+    cursor: 'pointer',
+    fontSize: '11px',
+    fontWeight: '500',
+    outline: 'none',
+    transition: 'all 0.15s ease',
+    whiteSpace: 'nowrap',
+  },
+  mediaDivider: {
+    width: '1px',
+    height: '16px',
+    background: 'rgba(255, 255, 255, 0.15)',
+    margin: '0 2px',
+  },
+  studentViewOnlyBadge: {
+    position: 'absolute',
+    top: '12px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(10, 14, 26, 0.92)',
+    border: '1px solid rgba(0, 212, 255, 0.35)',
+    borderRadius: '20px',
+    padding: '6px 16px',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 212, 255, 0.12)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    zIndex: 40,
+    userSelect: 'none',
+    pointerEvents: 'none',
+    color: '#e2e8f0',
+    fontSize: '12px',
+    fontWeight: '500',
+    letterSpacing: '0.3px',
+  },
+  studentViewOnlyDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    background: '#10b981',
+    boxShadow: '0 0 8px #10b981',
+    flexShrink: 0,
+  },
+  studentWhiteboardShield: {
+    position: 'absolute',
+    inset: 0,
+    zIndex: 35,
+    backgroundColor: 'transparent',
+    cursor: 'default',
+    pointerEvents: 'auto',
+  },
 
-  // ── Filmstrip (Desktop Vertical / Mobile Horizontal) ───────────────
+  // ── Filmstrip / Right-Hand Participant Sidebar ─────────────────────
   filmstripVertical: {
-    width: '180px', flexShrink: 0,
-    display: 'flex', flexDirection: 'column', gap: '8px',
-    overflowY: 'auto', overflowX: 'hidden',
-    padding: '2px 0', scrollbarWidth: 'thin',
-    scrollbarColor: 'rgba(0,212,255,0.3) transparent',
+    width: '200px',
+    minWidth: '200px',
+    maxWidth: '220px',
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    height: 'calc(100vh - 2rem)',
+    maxHeight: 'calc(100vh - 2rem)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '4px 6px 90px 2px',
+    scrollbarWidth: 'thin',
+    scrollbarColor: 'rgba(0, 212, 255, 0.3) rgba(10, 14, 26, 0.4)',
+    boxSizing: 'border-box',
   },
   filmstripHorizontal: {
-    height: '110px', flexShrink: 0,
-    display: 'flex', gap: '8px',
-    overflowX: 'auto', overflowY: 'hidden',
-    padding: '4px 0', scrollbarWidth: 'thin',
-    scrollbarColor: 'rgba(0,212,255,0.3) transparent',
+    height: '100px',
+    minHeight: '100px',
+    flexShrink: 0,
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    padding: '4px 0',
+    scrollbarWidth: 'thin',
+    scrollbarColor: 'rgba(0, 212, 255, 0.3) rgba(10, 14, 26, 0.4)',
+    boxSizing: 'border-box',
   },
   filmstripTileDesktop: {
-    width: '100%', height: '100px', flexShrink: 0,
+    width: '100%',
+    height: '110px',
+    minHeight: '110px',
+    maxHeight: '110px',
+    flexShrink: 0,
     backgroundColor: '#0a0e1a',
     border: '1px solid rgba(0,212,255,0.12)',
-    borderRadius: '8px', overflow: 'hidden', position: 'relative',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    position: 'relative',
     transition: 'border-color 0.3s, box-shadow 0.3s',
+    boxSizing: 'border-box',
   },
   filmstripTileMobile: {
     width: '140px', height: '80px', flexShrink: 0,
@@ -1962,21 +3785,35 @@ const S = {
   // FLOATING CONTROL BAR — Zoom-Style with Neon Glassmorphism
   // ═══════════════════════════════════════════════════════════════════════
   controlBar: {
-    position: 'absolute', bottom: '16px', left: '50%',
+    position: 'fixed',
+    bottom: '1.5rem',
+    left: '50%',
     transform: 'translateX(-50%)',
-    display: 'flex', alignItems: 'center', gap: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
     padding: '10px 14px',
-    maxWidth: '95vw', overflowX: 'auto',
+    maxWidth: '95vw',
+    overflowX: 'auto',
     WebkitOverflowScrolling: 'touch',
-    background: 'rgba(10, 14, 26, 0.88)',
-    backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+    background: 'rgba(10, 14, 26, 0.92)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
     borderRadius: '16px',
-    border: '1px solid rgba(0,212,255,0.12)',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(0,212,255,0.04), inset 0 1px 0 rgba(255,255,255,0.04)',
+    border: '1px solid rgba(0,212,255,0.2)',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.6), 0 0 20px rgba(0,212,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
     zIndex: 50,
+    pointerEvents: 'auto',
   },
   controlBarCompact: {
-    padding: '6px 10px', gap: '4px', borderRadius: '14px', bottom: '10px', maxWidth: '95vw', overflowX: 'auto',
+    padding: '6px 10px',
+    gap: '4px',
+    borderRadius: '14px',
+    bottom: '1.5rem',
+    maxWidth: '95vw',
+    overflowX: 'auto',
+    zIndex: 50,
+    pointerEvents: 'auto',
   },
   ctrlGroup: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
@@ -2033,6 +3870,311 @@ const S = {
   },
   ctrlDividerCompact: {
     height: '20px', margin: '0 2px',
+  },
+
+  // ── Auto-Kicked Overlay Styles ──────────────────────────────────────
+  kickedOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(5, 8, 16, 0.95)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    padding: '20px',
+  },
+  kickedCard: {
+    backgroundColor: '#0d1322',
+    border: '1px solid rgba(255, 68, 68, 0.4)',
+    borderRadius: '16px',
+    padding: '36px 32px',
+    maxWidth: '460px',
+    width: '100%',
+    textAlign: 'center',
+    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(255, 68, 68, 0.15)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '14px',
+  },
+  kickedIconContainer: {
+    width: '68px',
+    height: '68px',
+    borderRadius: '50%',
+    backgroundColor: 'rgba(255, 68, 68, 0.12)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '4px',
+  },
+  kickedTitle: {
+    color: '#ffffff',
+    fontSize: '22px',
+    fontWeight: '700',
+    margin: 0,
+    letterSpacing: '0.2px',
+  },
+  kickedDesc: {
+    color: '#94a3b8',
+    fontSize: '14px',
+    lineHeight: '1.5',
+    margin: 0,
+  },
+  kickedActions: {
+    display: 'flex',
+    gap: '12px',
+    width: '100%',
+    marginTop: '10px',
+  },
+  rejoinBtn: {
+    flex: 1,
+    padding: '12px 18px',
+    backgroundColor: '#00d4ff',
+    color: '#070a13',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 14px rgba(0, 212, 255, 0.3)',
+  },
+  kickedLeaveBtn: {
+    padding: '12px 18px',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    color: '#cbd5e1',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  rejoinPendingBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    marginTop: '10px',
+    width: '100%',
+  },
+  rejoinPendingText: {
+    color: '#7ecfff',
+    fontSize: '14px',
+    fontWeight: '500',
+  },
+  rejoinRejectedBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    marginTop: '10px',
+    width: '100%',
+  },
+  rejoinRejectedText: {
+    color: '#ff6b6b',
+    fontSize: '14px',
+    fontWeight: '500',
+  },
+
+  // ── Warning Phase Modal Styles ─────────────────────────────────────
+  warningOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9998,
+    padding: '20px',
+  },
+  warningModal: {
+    backgroundColor: '#0d1322',
+    border: '1px solid rgba(255, 87, 87, 0.6)',
+    borderRadius: '16px',
+    padding: '30px 28px',
+    maxWidth: '440px',
+    width: '100%',
+    textAlign: 'center',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8), 0 0 35px rgba(255, 68, 68, 0.25)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
+    animation: 'pulseWarning 2s infinite',
+  },
+  warningBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 12px',
+    backgroundColor: 'rgba(255, 68, 68, 0.15)',
+    border: '1px solid rgba(255, 68, 68, 0.35)',
+    borderRadius: '20px',
+  },
+  warningBadgeText: {
+    color: '#ff4444',
+    fontSize: '12px',
+    fontWeight: '700',
+    letterSpacing: '0.8px',
+  },
+  warningPulseDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    backgroundColor: '#ff4444',
+  },
+  strikeContainer: {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '6px',
+  },
+  strikePill: {
+    padding: '6px 14px',
+    borderRadius: '8px',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    color: '#64748b',
+    fontSize: '13px',
+    fontWeight: '600',
+    transition: 'all 0.3s ease',
+  },
+  strikePillActive: {
+    backgroundColor: 'rgba(255, 68, 68, 0.2)',
+    borderColor: '#ff4444',
+    color: '#ff4444',
+    boxShadow: '0 0 10px rgba(255, 68, 68, 0.3)',
+  },
+  warningHeadline: {
+    color: '#ffffff',
+    fontSize: '18px',
+    fontWeight: '700',
+    margin: '4px 0 0 0',
+  },
+  warningDescription: {
+    color: '#94a3b8',
+    fontSize: '13px',
+    lineHeight: '1.5',
+    margin: 0,
+  },
+  warningCountdownBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '12px 24px',
+    backgroundColor: 'rgba(255, 68, 68, 0.08)',
+    border: '1px solid rgba(255, 68, 68, 0.25)',
+    borderRadius: '12px',
+    margin: '6px 0',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  warningCountdownNumber: {
+    color: '#ff4444',
+    fontSize: '32px',
+    fontWeight: '800',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  warningCountdownLabel: {
+    color: '#cbd5e1',
+    fontSize: '12px',
+    fontWeight: '500',
+  },
+  warningPrivacyNote: {
+    color: '#64748b',
+    fontSize: '11px',
+    fontStyle: 'italic',
+  },
+
+  // ── Teacher Rejoin Notification Styles ──────────────────────────────
+  teacherRejoinToastContainer: {
+    position: 'fixed',
+    top: '24px',
+    right: '24px',
+    zIndex: 9999,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    maxWidth: '380px',
+    width: 'calc(100% - 48px)',
+  },
+  teacherRejoinToast: {
+    backgroundColor: '#0d1322',
+    border: '1px solid rgba(0, 212, 255, 0.35)',
+    borderRadius: '12px',
+    padding: '16px',
+    boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(0, 212, 255, 0.15)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    animation: 'toastSlideIn 0.3s ease-out forwards',
+  },
+  teacherToastHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  teacherToastAvatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    backgroundColor: 'rgba(0, 212, 255, 0.2)',
+    border: '1px solid rgba(0, 212, 255, 0.4)',
+    color: '#00d4ff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '700',
+    fontSize: '15px',
+    flexShrink: 0,
+  },
+  teacherToastInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teacherToastName: {
+    color: '#ffffff',
+    fontSize: '14px',
+    fontWeight: '600',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  teacherToastSub: {
+    color: '#94a3b8',
+    fontSize: '11px',
+    marginTop: '2px',
+  },
+  teacherToastActions: {
+    display: 'flex',
+    gap: '8px',
+  },
+  teacherToastApproveBtn: {
+    flex: 1,
+    padding: '8px 14px',
+    backgroundColor: '#10b981',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  teacherToastRejectBtn: {
+    padding: '8px 14px',
+    backgroundColor: 'rgba(255, 68, 68, 0.15)',
+    color: '#ff6b6b',
+    border: '1px solid rgba(255, 68, 68, 0.3)',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
   },
 
   // ═══════════════════════════════════════════════════════════════════════

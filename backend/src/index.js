@@ -173,6 +173,31 @@ io.on('connection', (socket) => {
     if (room.activeScreenShare) {
       socket.emit('screen-share-started', room.activeScreenShare);
     }
+    if (room.activeWhiteboard) {
+      socket.emit('whiteboard-started', {
+        startedBy: room.activeWhiteboard.startedBy,
+        socketId: room.activeWhiteboard.socketId,
+      });
+      if (room.activeWhiteboard.scene) {
+        socket.emit('whiteboard-draw', {
+          scene: room.activeWhiteboard.scene,
+          startedBy: room.activeWhiteboard.startedBy,
+          socketId: room.activeWhiteboard.socketId,
+        });
+      }
+      if (room.activeWhiteboard.mediaState) {
+        const media = room.activeWhiteboard.mediaState;
+        let adjustedTime = media.currentTime || 0;
+        if ((media.action === 'play' || media.action === 'sync' || media.action === 'force-sync') && media.updatedAt) {
+          adjustedTime += (Date.now() - media.updatedAt) / 1000;
+        }
+        socket.emit('whiteboard-media-sync', {
+          action: media.action,
+          currentTime: adjustedTime,
+          elementId: media.elementId,
+        });
+      }
+    }
 
     socket.to(roomId).emit('room:participant-joined', {
       socketId: socket.id,
@@ -286,6 +311,10 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('pdf-page-changed', { page });
   });
 
+  socket.on('pdf-draw-stroke', ({ roomId, strokeData }) => {
+    socket.to(roomId).emit('pdf-draw-stroke', { strokeData });
+  });
+
   socket.on('pdf-stop', async ({ roomId }) => {
     const room = await ensureRoomTracked(roomId);
     if (room) {
@@ -316,22 +345,58 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────────────
   // Whiteboard (Excalidraw) synchronization
   // ─────────────────────────────────────────────────────────────────────────
-  socket.on('whiteboard-started', ({ roomId, startedBy, socketId }) => {
+  socket.on('whiteboard-started', async ({ roomId, startedBy, socketId }) => {
     console.log(`[Whiteboard] Started by ${startedBy} in room ${roomId}`);
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      room.activeWhiteboard = { startedBy, socketId, scene: room.activeWhiteboard?.scene || null };
+    }
     socket.to(roomId).emit('whiteboard-started', { startedBy, socketId });
   });
 
-  socket.on('whiteboard-draw', ({ roomId, scene, socketId, startedBy }) => {
+  socket.on('whiteboard-draw', async ({ roomId, scene, socketId, startedBy }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      if (!room.activeWhiteboard) {
+        room.activeWhiteboard = { startedBy, socketId, scene };
+      } else {
+        room.activeWhiteboard.scene = scene;
+      }
+    }
     socket.to(roomId).emit('whiteboard-draw', { scene, startedBy, socketId });
   });
 
-  socket.on('whiteboard-clear', ({ roomId }) => {
+  socket.on('whiteboard-media-sync', async ({ roomId, action, currentTime, elementId }) => {
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      if (!room.activeWhiteboard) {
+        room.activeWhiteboard = { scene: null };
+      }
+      room.activeWhiteboard.mediaState = {
+        action,
+        currentTime: typeof currentTime === 'number' ? currentTime : 0,
+        updatedAt: Date.now(),
+        elementId,
+      };
+    }
+    socket.to(roomId).emit('whiteboard-media-sync', { action, currentTime, elementId });
+  });
+
+  socket.on('whiteboard-clear', async ({ roomId }) => {
     console.log(`[Whiteboard] Cleared in room ${roomId}`);
+    const room = await ensureRoomTracked(roomId);
+    if (room && room.activeWhiteboard) {
+      room.activeWhiteboard.scene = { elements: [] };
+    }
     socket.to(roomId).emit('whiteboard-clear');
   });
 
-  socket.on('whiteboard-stop', ({ roomId }) => {
+  socket.on('whiteboard-stop', async ({ roomId }) => {
     console.log(`[Whiteboard] Stopped in room ${roomId}`);
+    const room = await ensureRoomTracked(roomId);
+    if (room) {
+      delete room.activeWhiteboard;
+    }
     socket.to(roomId).emit('whiteboard-stop');
   });
 
@@ -342,6 +407,24 @@ io.on('connection', (socket) => {
     socket.to(classId).emit('student:face_update', {
       studentId, studentName, faceTime, livenessStatus,
     });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Absence Auto-kick & Rejoin Workflow
+  // ─────────────────────────────────────────────────────────────────────────
+  socket.on('request-rejoin', ({ roomId, userId, studentName }) => {
+    console.log(`[Rejoin] Student ${studentName} (${userId}) requesting rejoin in room ${roomId}`);
+    socket.to(roomId).emit('request-rejoin', { roomId, userId, studentName, socketId: socket.id });
+  });
+
+  socket.on('approve-rejoin', ({ roomId, targetUserId }) => {
+    console.log(`[Rejoin] Teacher approved student ${targetUserId} in room ${roomId}`);
+    io.to(roomId).emit('approve-rejoin', { roomId, targetUserId });
+  });
+
+  socket.on('reject-rejoin', ({ roomId, targetUserId }) => {
+    console.log(`[Rejoin] Teacher rejected student ${targetUserId} in room ${roomId}`);
+    io.to(roomId).emit('reject-rejoin', { roomId, targetUserId });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -385,6 +468,19 @@ io.on('connection', (socket) => {
       io.to(room.teacherSocket).emit('attendance-update', payload);
     } else {
       io.to(roomId).emit('attendance-update', payload);
+    }
+  });
+
+  socket.on('leave-room', (roomId, userId) => {
+    console.log(`[Room] leave-room: ${socket.id} (${userId}) in ${roomId}`);
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+    if (room.participants.has(socket.id)) {
+      const { name, role } = room.participants.get(socket.id);
+      room.participants.delete(socket.id);
+      io.to(roomId).emit('room:participant-left', { socketId: socket.id });
+      io.to(roomId).emit('user-left', socket.id);
+      console.log(`[Room] ${name || socket.id} (${role || '?'}) left ${roomId} via leave-room — ${room.participants.size} remaining`);
     }
   });
 

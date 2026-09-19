@@ -78,6 +78,7 @@ const Room = () => {
       socketRef.current = null;
       setSocket(null);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sendMessage = useCallback(() => {
@@ -325,10 +326,12 @@ const Room = () => {
 const styles = {
   page: {
     background: '#1a1a2e',
-    minHeight: '100vh',
+    height: '100vh',
+    maxHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    overflow: 'hidden',
   },
   topbar: {
     background: '#16213e',
@@ -381,19 +384,43 @@ const styles = {
   recText: { color: '#ff4444', fontSize: '9px', fontWeight: '600' },
   timerText: { color: '#7ecfff', fontSize: '11px' },
   participantCount: { color: '#7ecfff', fontSize: '11px' },
-  main: { flex: 1, display: 'flex', gap: '6px', padding: '6px', overflow: 'hidden' },
-  videoArea: { flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'auto', minWidth: 0 },
+  main: {
+    flex: 1,
+    display: 'flex',
+    gap: '6px',
+    padding: '6px',
+    overflow: 'hidden',
+    minHeight: 0,
+    height: 'calc(100vh - 49px)',
+    position: 'relative',
+  },
+  videoArea: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    overflow: 'hidden',
+    minWidth: 0,
+    minHeight: 0,
+    height: '100%',
+  },
   drawerBackdrop: {
-    position: 'fixed', inset: 0,
+    position: 'fixed',
+    inset: 0,
     background: 'rgba(0,0,0,0.4)',
-    zIndex: 40,
+    zIndex: 1050,
   },
   drawer: {
-    position: 'absolute', top: 0, right: 0, bottom: 0,
-    width: '300px', zIndex: 45,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '300px',
+    zIndex: 1100,
     background: '#16213e',
     borderRadius: '10px',
-    display: 'flex', flexDirection: 'column',
+    display: 'flex',
+    flexDirection: 'column',
     overflow: 'hidden',
     transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s',
     boxShadow: '-4px 0 24px rgba(0,0,0,0.3)',

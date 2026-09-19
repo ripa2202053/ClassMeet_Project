@@ -20,12 +20,9 @@ const connectDB = async () => {
   } catch (error) {
     retryCount += 1;
     console.error(`MongoDB Error (attempt ${retryCount}): ${error.message}`);
-    if (retryCount >= 5) {
-      console.error('MongoDB connection failed after 5 attempts. Exiting process.');
-      process.exit(1);
-    }
-    console.log('Retrying MongoDB connection in 5 seconds...');
-    setTimeout(connectDB, 5000);
+    console.log('Ensure your IP address is whitelisted in MongoDB Atlas (Network Access -> Add 0.0.0.0/0).');
+    console.log('Retrying MongoDB connection in 10 seconds...');
+    setTimeout(connectDB, 10000);
   }
 };
 

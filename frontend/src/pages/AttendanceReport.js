@@ -55,7 +55,7 @@ const AttendanceReport = () => {
 
   if (loading) return (
     <div style={styles.container}>
-      <p style={styles.loading}>Loading report...</p>
+      <p style={styles.loading}>⚡ Loading AI Telemetry Report...</p>
     </div>
   );
 
@@ -70,44 +70,48 @@ const AttendanceReport = () => {
 
   return (
     <div style={styles.container}>
+      {/* HEADER BAR */}
       <div style={styles.header}>
         <div>
-          <h2 style={styles.title}>📊 Attendance Report</h2>
+          <div style={styles.tagBadge}>✦ AI SESSION TELEMETRY</div>
+          <h2 style={styles.title}>{room?.title || 'Session Report'}</h2>
           <p style={styles.roomInfo}>
-            {room?.title} | Code: {room?.roomCode} | Duration: {room?.duration} min
+            Room Code: <strong style={{ color: '#0b453e' }}>{room?.roomCode}</strong> • Duration: {room?.duration} min
           </p>
         </div>
         <div style={styles.headerBtns}>
           <button style={styles.exportBtn} onClick={handleExport}>
-            📥 Export Excel
+            📥 Export to Excel
           </button>
           <button style={styles.backBtn} onClick={() => navigate('/teacher-dashboard')}>
-            ← Back
+            ← Back to Dashboard
           </button>
         </div>
       </div>
 
+      {/* STATS SUMMARY TILES */}
       <div style={styles.summaryGrid}>
         <div style={styles.summaryCard}>
           <span style={styles.summaryValue}>{report.length}</span>
           <span style={styles.summaryLabel}>Total Students</span>
         </div>
         <div style={styles.summaryCard}>
-          <span style={{...styles.summaryValue, color: '#00ff88'}}>{presentCount}</span>
-          <span style={styles.summaryLabel}>Present</span>
+          <span style={{ ...styles.summaryValue, color: '#047857' }}>{presentCount}</span>
+          <span style={styles.summaryLabel}>Present (AI Verified)</span>
         </div>
         <div style={styles.summaryCard}>
-          <span style={{...styles.summaryValue, color: '#ff4444'}}>{absentCount}</span>
+          <span style={{ ...styles.summaryValue, color: '#b91c1c' }}>{absentCount}</span>
           <span style={styles.summaryLabel}>Absent</span>
         </div>
         <div style={styles.summaryCard}>
-          <span style={styles.summaryValue}>
+          <span style={{ ...styles.summaryValue, color: '#0b453e' }}>
             {report.length > 0 ? ((presentCount / report.length) * 100).toFixed(1) : 0}%
           </span>
           <span style={styles.summaryLabel}>Attendance Rate</span>
         </div>
       </div>
 
+      {/* STUDENT TABLE */}
       <div style={styles.tableContainer}>
         <table style={styles.table}>
           <thead>
@@ -126,7 +130,7 @@ const AttendanceReport = () => {
           <tbody>
             {report.length === 0 ? (
               <tr>
-                <td colSpan="9" style={styles.noData}>No students joined yet</td>
+                <td colSpan="9" style={styles.noData}>No students joined this session yet</td>
               </tr>
             ) : (
               report.map((att) => (
@@ -146,7 +150,7 @@ const AttendanceReport = () => {
                       <div style={{
                         ...styles.progressBar,
                         width: `${Math.min(att.facePercent, 100)}%`,
-                        backgroundColor: att.facePercent >= 75 ? '#00ff88' : '#ff4444'
+                        background: att.facePercent >= 75 ? 'linear-gradient(90deg, #10b981, #059669)' : '#ef4444'
                       }} />
                       <span style={styles.progressText}>{att.facePercent}%</span>
                     </div>
@@ -154,11 +158,11 @@ const AttendanceReport = () => {
                   <td style={styles.td}>
                     <span style={{
                       ...styles.statusBadge,
-                      backgroundColor: att.isPresent ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,68,0.2)',
-                      color: att.isPresent ? '#00ff88' : '#ff4444',
-                      border: `1px solid ${att.isPresent ? '#00ff88' : '#ff4444'}`
+                      backgroundColor: att.isPresent ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: att.isPresent ? '#047857' : '#b91c1c',
+                      border: `1px solid ${att.isPresent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`
                     }}>
-                      {att.isPresent ? '✅ Present' : '❌ Absent'}
+                      {att.isPresent ? '✓ Present' : '✕ Absent'}
                     </span>
                   </td>
                   <td style={styles.td}>{att.muteCount}</td>
@@ -176,32 +180,202 @@ const AttendanceReport = () => {
 };
 
 const styles = {
-  container: { width: '100%', padding: '20px', backgroundColor: '#0a0e1a', minHeight: '100vh', boxSizing: 'border-box' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '25px', backgroundColor: '#0d1b2a', padding: '16px 20px', borderRadius: '10px', borderBottom: '2px solid #00d4ff' },
-  title: { color: '#00d4ff', margin: '0 0 5px 0', fontSize: '22px' },
-  roomInfo: { color: '#7ecfff', margin: 0, fontSize: '13px' },
-  headerBtns: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
-  exportBtn: { padding: '8px 16px', backgroundColor: '#00ff88', color: '#0a0e1a', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
-  backBtn: { padding: '8px 16px', backgroundColor: '#1a3a5c', color: '#00d4ff', border: '1px solid #00d4ff', borderRadius: '5px', cursor: 'pointer' },
-  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '15px', marginBottom: '25px' },
-  summaryCard: { backgroundColor: '#0d1b2a', border: '1px solid #00d4ff', borderRadius: '10px', padding: '20px', textAlign: 'center' },
-  summaryValue: { color: '#00d4ff', fontSize: '32px', fontWeight: 'bold', display: 'block' },
-  summaryLabel: { color: '#7ecfff', fontSize: '14px', display: 'block', marginTop: '5px' },
-  tableContainer: { backgroundColor: '#0d1b2a', border: '1px solid #00d4ff', borderRadius: '10px', overflow: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse' },
-  tableHeader: { backgroundColor: '#0a0e1a' },
-  th: { color: '#00d4ff', padding: '12px 15px', textAlign: 'left', borderBottom: '1px solid #1a3a5c', fontSize: '13px', fontWeight: 'bold' },
-  tableRow: { borderBottom: '1px solid #1a3a5c' },
-  td: { color: '#ffffff', padding: '12px 15px', fontSize: '13px' },
-  studentName: { color: '#ffffff', fontWeight: 'bold' },
-  studentEmail: { color: '#7ecfff', fontSize: '11px' },
-  progressContainer: { position: 'relative', backgroundColor: '#1a3a5c', borderRadius: '5px', height: '20px', overflow: 'hidden' },
-  progressBar: { height: '100%', borderRadius: '5px', transition: 'width 0.5s' },
-  progressText: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#ffffff', fontSize: '11px', fontWeight: 'bold' },
-  statusBadge: { padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' },
-  noData: { color: '#7ecfff', textAlign: 'center', padding: '30px' },
-  loading: { color: '#00d4ff', textAlign: 'center', marginTop: '50px', fontSize: '18px' },
-  error: { color: '#ff4444', textAlign: 'center', marginTop: '50px', fontSize: '18px' }
+  container: {
+    width: '100%',
+    padding: '28px 36px',
+    background: 'linear-gradient(135deg, #7c959c 0%, #8ba2ab 28%, #9ab1ba 65%, #bfd3dd 100%)',
+    minHeight: '100vh',
+    boxSizing: 'border-box',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    color: '#0f242a'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '16px',
+    marginBottom: '28px',
+    backgroundColor: 'rgba(240, 248, 251, 0.75)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    padding: '24px 28px',
+    borderRadius: '26px',
+    border: '1.5px solid rgba(255, 255, 255, 0.85)',
+    boxShadow: '0 16px 40px rgba(65, 88, 97, 0.15)'
+  },
+  tagBadge: {
+    fontSize: '11px',
+    fontWeight: '800',
+    letterSpacing: '0.12em',
+    color: '#0b453e',
+    marginBottom: '6px'
+  },
+  title: {
+    color: '#0f242a',
+    margin: '0 0 6px 0',
+    fontSize: '28px',
+    fontWeight: '800',
+    letterSpacing: '-0.02em'
+  },
+  roomInfo: {
+    color: '#47636b',
+    margin: 0,
+    fontSize: '13.5px'
+  },
+  headerBtns: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap'
+  },
+  exportBtn: {
+    padding: '11px 26px',
+    backgroundColor: '#d0faf8',
+    color: '#082d28',
+    border: '2px solid #40ebd7',
+    borderRadius: '9999px',
+    cursor: 'pointer',
+    fontWeight: '800',
+    fontSize: '13.5px',
+    boxShadow: '0 0 18px rgba(64, 235, 215, 0.65)'
+  },
+  backBtn: {
+    padding: '11px 24px',
+    backgroundColor: '#171e24',
+    color: '#ffffff',
+    border: '1px solid rgba(255, 255, 255, 0.4)',
+    borderRadius: '9999px',
+    cursor: 'pointer',
+    fontSize: '13.5px',
+    fontWeight: '700',
+    boxShadow: '0 4px 14px rgba(23, 30, 36, 0.25)'
+  },
+  summaryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '20px',
+    marginBottom: '28px'
+  },
+  summaryCard: {
+    backgroundColor: 'rgba(240, 248, 251, 0.7)',
+    backdropFilter: 'blur(18px)',
+    border: '1.5px solid rgba(255, 255, 255, 0.85)',
+    borderRadius: '22px',
+    padding: '24px',
+    textAlign: 'center',
+    boxShadow: '0 10px 30px rgba(65, 88, 97, 0.12)'
+  },
+  summaryValue: {
+    color: '#0f242a',
+    fontSize: '38px',
+    fontWeight: '800',
+    display: 'block',
+    letterSpacing: '-0.02em'
+  },
+  summaryLabel: {
+    color: '#47636b',
+    fontSize: '12px',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    display: 'block',
+    marginTop: '6px'
+  },
+  tableContainer: {
+    backgroundColor: 'rgba(240, 248, 251, 0.8)',
+    backdropFilter: 'blur(20px)',
+    border: '1.5px solid rgba(255, 255, 255, 0.85)',
+    borderRadius: '26px',
+    overflow: 'auto',
+    boxShadow: '0 16px 40px rgba(65, 88, 97, 0.15)'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse'
+  },
+  tableHeader: {
+    backgroundColor: 'rgba(215, 230, 235, 0.85)'
+  },
+  th: {
+    color: '#082d28',
+    padding: '16px 20px',
+    textAlign: 'left',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.8)',
+    fontSize: '12px',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em'
+  },
+  tableRow: {
+    borderBottom: '1px solid rgba(255, 255, 255, 0.6)'
+  },
+  td: {
+    color: '#0f242a',
+    padding: '14px 20px',
+    fontSize: '13.5px'
+  },
+  studentName: {
+    color: '#0f242a',
+    fontWeight: '700'
+  },
+  studentEmail: {
+    color: '#577179',
+    fontSize: '12px',
+    marginTop: '2px'
+  },
+  progressContainer: {
+    position: 'relative',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: '9999px',
+    height: '18px',
+    overflow: 'hidden',
+    minWidth: '90px',
+    border: '1px solid rgba(255, 255, 255, 0.9)'
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: '9999px',
+    transition: 'width 0.4s ease'
+  },
+  progressText: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    color: '#ffffff',
+    fontSize: '10.5px',
+    fontWeight: '800',
+    textShadow: '0 1px 2px rgba(0,0,0,0.4)'
+  },
+  statusBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 12px',
+    borderRadius: '9999px',
+    fontSize: '11.5px',
+    fontWeight: '700'
+  },
+  noData: {
+    color: '#577179',
+    textAlign: 'center',
+    padding: '40px',
+    fontSize: '14px'
+  },
+  loading: {
+    color: '#0b453e',
+    textAlign: 'center',
+    marginTop: '60px',
+    fontSize: '18px',
+    fontWeight: '700'
+  },
+  error: {
+    color: '#b91c1c',
+    textAlign: 'center',
+    marginTop: '60px',
+    fontSize: '18px',
+    fontWeight: '700'
+  }
 };
 
 export default AttendanceReport;

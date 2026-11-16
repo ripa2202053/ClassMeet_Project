@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Why We Built It — ClassMeet</title>
+  <meta name="description" content="Addressing the challenges of traditional online learning environments. The story behind ClassMeet.">
+  
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brandDark: '#000B18',
+            brandCard: '#031526',
+            brandCyan: '#18D5FD',
+            brandCyanBright: '#06DBFE',
+            brandCyanGlow: '#38BDF8',
+            brandBlueAccent: '#0284C7'
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body class="min-h-screen bg-[#000B18] text-white font-sans relative overflow-x-hidden selection:bg-[#18D5FD] selection:text-[#000E1D]">
+
+  <!-- Fixed Full Background -->
+  <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-[#000B18]" aria-hidden="true">
+    <img src="../background.png" alt="ClassMeet Background" class="w-full h-full object-cover object-center pointer-events-none select-none">
+  </div>
+
+  <!-- NAVIGATION BAR -->
+  <header class="sticky top-0 z-50 w-full px-6 sm:px-12 lg:px-16 py-4 bg-[#000B18]/85 backdrop-blur-md border-b border-[#18D5FD]/15 transition-all">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- Logo -->
+      <a href="../#home" class="flex items-center gap-3.5 cursor-pointer group select-none" aria-label="ClassMeet Home">
+        <div class="w-10 h-10 flex items-center justify-center">
+          <svg viewBox="0 0 36 36" fill="none" class="w-9 h-9 transform group-hover:scale-105 transition-transform" aria-hidden="true">
+            <path d="M18 4L34 11.5L18 19L2 11.5L18 4Z" fill="#38BDF8" stroke="#18D5FD" stroke-width="1.5" />
+            <path d="M6.5 13.5V20.5C6.5 20.5 5 21.5 5 23" stroke="#18D5FD" stroke-width="2" stroke-linecap="round" />
+            <circle cx="5" cy="23.5" r="1.6" fill="#18D5FD" />
+            <path d="M8 16.5L18 21.5L28 16.5V20.5L18 25.5L8 20.5V16.5Z" fill="#0284C7" />
+          </svg>
+        </div>
+        <span class="text-2xl font-bold tracking-tight text-white flex items-center">
+          Class<span class="text-[#18D5FD]">Meet</span>
+        </span>
+      </a>
+
+      <!-- Center: Navigation Links -->
+      <nav class="hidden md:flex items-center gap-8 lg:gap-10" aria-label="Main Navigation">
+        <a href="../#home" class="nav-item text-sm lg:text-[0.9375rem] font-medium text-slate-300 hover:text-white">Home</a>
+        <a href="../#why-classmeet" class="nav-item active text-sm lg:text-[0.9375rem] font-semibold text-white">Why ClassMeet</a>
+        <a href="../#features" class="nav-item text-sm lg:text-[0.9375rem] font-medium text-slate-300 hover:text-white">Features</a>
+        <a href="../#how-it-works" class="nav-item text-sm lg:text-[0.9375rem] font-medium text-slate-300 hover:text-white">How It Works</a>
+        <a href="../#about-us" class="nav-item text-sm lg:text-[0.9375rem] font-medium text-slate-300 hover:text-white">About Us</a>
+        <a href="../#contact" class="nav-item text-sm lg:text-[0.9375rem] font-medium text-slate-300 hover:text-white">Contact</a>
+      </nav>
+
+      <!-- Right: Action Buttons -->
+      <div class="flex items-center gap-3.5 sm:gap-4">
+        <a href="../#home" class="btn-outline hidden sm:inline-flex items-center justify-center px-5 py-2 rounded-full text-white font-medium text-sm">
+          Join Class
+        </a>
+        <a href="../#home" class="btn-cyan inline-flex items-center justify-center px-6 py-2 rounded-full text-[#001324] font-bold text-sm">
+          Sign Up
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main class="relative z-10 py-12 sm:py-20 px-6 sm:px-12 lg:px-16 max-w-5xl mx-auto">
+    
+    <!-- Breadcrumb / Back Link -->
+    <div class="mb-8">
+      <a href="../#why-classmeet" class="inline-flex items-center gap-2.5 text-sm font-semibold text-[#18D5FD] hover:text-white transition-all group">
+        <span class="transform group-hover:-translate-x-1 transition-transform">&larr;</span>
+        <span>Back to Why ClassMeet</span>
+      </a>
+    </div>
+
+    <!-- Header Section -->
+    <div class="text-left mb-16">
+      <span class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-widest text-[#19D5F5] bg-[#061D35]/85 border border-[#19D5F5]/40 shadow-[0_0_15px_rgba(25,213,245,0.2)] mb-4">
+        <span class="w-1.5 h-1.5 rounded-full bg-[#19D5F5]"></span>
+        THE INSPIRATION
+      </span>
+      <h1 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
+        Why We <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] via-[#38BDF8] to-[#0284C7]">Built It</span>
+      </h1>
+      <p class="mt-5 text-lg sm:text-xl text-slate-300 leading-relaxed font-normal">
+        Addressing the chronic friction points of remote learning: awkward roll calls, proxy presence, invasive surveillance software, and clunky separate tools that pull students away from real education.
+      </p>
+    </div>
+
+    <!-- Featured Visual Banner -->
+    <div class="mb-14 rounded-2xl overflow-hidden border border-[#19D5F5]/35 bg-[#061D35]/90 shadow-[0_0_35px_rgba(25,213,245,0.18)] max-w-2xl mx-auto flex items-center justify-center p-3 sm:p-4">
+      <img src="../card3_why_we_built_it.jpg" alt="Why We Built It Visual Illustration" class="w-full max-h-[380px] object-contain rounded-xl">
+    </div>
+
+    <!-- Deep-Dive Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+      
+      <div class="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-xl backdrop-blur-sm">
+        <div class="w-12 h-12 rounded-xl bg-[#18D5FD]/15 border border-[#18D5FD]/40 flex items-center justify-center text-[#18D5FD] mb-5">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-bold text-white mb-3">Ending the "Roll Call" Dilemma</h2>
+        <p class="text-slate-300 leading-relaxed text-sm sm:text-base">
+          Instructors routinely waste 10 to 15 minutes of every lecture taking manual attendance or reviewing spreadsheet logs that are easily faked with static photos. ClassMeet automates this completely without touching cloud storage.
+        </p>
+      </div>
+
+      <div class="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-xl backdrop-blur-sm">
+        <div class="w-12 h-12 rounded-xl bg-[#18D5FD]/15 border border-[#18D5FD]/40 flex items-center justify-center text-[#18D5FD] mb-5">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-bold text-white mb-3">Eliminating Spyware Anxiety</h2>
+        <p class="text-slate-300 leading-relaxed text-sm sm:text-base">
+          Traditional proctoring software demands kernel-level access, scans personal disks, and records intimate bedroom environments. We proved that ethical browser-based edge intelligence can verify academic integrity without invasive breach of privacy.
+        </p>
+      </div>
+
+      <div class="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-xl backdrop-blur-sm">
+        <div class="w-12 h-12 rounded-xl bg-[#18D5FD]/15 border border-[#18D5FD]/40 flex items-center justify-center text-[#18D5FD] mb-5">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 6h16M4 12h16m-7 6h7"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-bold text-white mb-3">Unifying Disconnected EdTech</h2>
+        <p class="text-slate-300 leading-relaxed text-sm sm:text-base">
+          Teachers previously had to juggle video conferencing apps, separate whiteboard tabs, external slide viewers, and attendance forms. ClassMeet converges every pedagogical component into one ultra-fluid, latency-free interface.
+        </p>
+      </div>
+
+      <div class="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-xl backdrop-blur-sm">
+        <div class="w-12 h-12 rounded-xl bg-[#18D5FD]/15 border border-[#18D5FD]/40 flex items-center justify-center text-[#18D5FD] mb-5">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-bold text-white mb-3">Empowering Educator Agency</h2>
+        <p class="text-slate-300 leading-relaxed text-sm sm:text-base">
+          Technology should serve pedagogy, not hinder it. We designed ClassMeet hand-in-hand with university professors and K-12 instructors to ensure the platform feels like an empowering academic studio.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Bottom Navigation / Call To Action -->
+    <div class="p-8 sm:p-10 rounded-2xl bg-gradient-to-r from-[#03182B] via-[#062444] to-[#02182B] border border-[#19D5F5]/40 text-center flex flex-col items-center justify-center shadow-2xl">
+      <h3 class="text-2xl sm:text-3xl font-bold text-white mb-3">Experience the difference today</h3>
+      <p class="text-slate-300 text-sm sm:text-base max-w-xl mx-auto mb-6">
+        See how ClassMeet solves common online education challenges in real time.
+      </p>
+      <div class="flex flex-wrap items-center justify-center gap-4">
+        <a href="../#why-classmeet" class="btn-cyan px-7 py-3 rounded-full text-[#001324] font-bold text-sm">
+          &larr; Back to 3D Carousel
+        </a>
+        <a href="../#home" class="btn-outline px-7 py-3 rounded-full text-white font-medium text-sm">
+          Return to Home
+        </a>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="py-12 border-t border-[#18D5FD]/20 bg-[#000B18]/90 text-center text-xs text-slate-500 relative z-10">
+    <div class="max-w-7xl mx-auto px-6">
+      <p>&copy; 2026 ClassMeet Inc. Engineered with integrity for modern educators worldwide.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

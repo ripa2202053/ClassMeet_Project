@@ -1,0 +1,452 @@
+/* ==========================================================================
+   Exact Replica of Pinterest Pin: https://pin.it/4Cc3kYMK4 (@ilmah960)
+   Features:
+   - Outer canvas: Soft slate-mist cool blue-grey background
+   - Card: Pure white rounded surface with soft elevation shadow
+   - Welcome panel: Curved organic arc on side with User's Deep Ocean Blue 3D Cube Design
+   - Sliding transitions between Login and Register
+   ========================================================================== */
+
+/* Outer Page Background: Restored to original clean SaaS cool slate-mist gradient */
+.login-page-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  width: 100vw;
+  background: radial-gradient(circle at 82% 18%, #c6d7e0 0%, #a0b7c2 35%, #718d97 70%, #486068 100%);
+  padding: 20px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Main White Card Container */
+.login-card-container {
+  position: relative;
+  width: 820px;
+  height: 520px;
+  background: #ffffff;
+  border-radius: 30px;
+  box-shadow: 0 20px 50px rgba(18, 38, 54, 0.18), 0 4px 16px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  display: flex;
+  z-index: 10;
+}
+
+/* ==========================================================================
+   FORM PANELS (LEFT & RIGHT)
+   ========================================================================== */
+.form-box {
+  position: absolute;
+  top: 0;
+  width: 55%;
+  height: 100%;
+  padding: 36px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  z-index: 2;
+  background: #ffffff;
+  transition: transform 0.75s cubic-bezier(0.77, 0, 0.175, 1), opacity 0.5s ease;
+}
+
+/* Login Form: Positioned on the RIGHT side by default */
+.form-box.login-box {
+  right: 0;
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.login-card-container.active .form-box.login-box {
+  transform: translateX(80px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Register Form: Positioned on the LEFT side, enters on .active */
+.form-box.register-box {
+  left: 0;
+  transform: translateX(-80px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.login-card-container.active .form-box.register-box {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Form Typography */
+.form-title {
+  font-size: 29px;
+  font-weight: 800;
+  color: #233740;
+  margin: 0 0 14px 0;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.form-subtitle {
+  font-size: 13px;
+  color: #5d7580;
+  margin: -6px 0 18px 0;
+  text-align: center;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.form-error-banner {
+  background: #fee2e2;
+  border-left: 3px solid #ef4444;
+  color: #b91c1c;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-bottom: 14px;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.auth-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Form Input Boxes: Soft light tint of the slate background (#dce8ec), no icons */
+.form-input-group {
+  position: relative;
+  background: #dce8ec;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 44px;
+  border: 1.5px solid transparent;
+  transition: all 0.25s ease;
+  box-sizing: border-box;
+}
+
+.form-input-group:hover {
+  background: #d4e2e7;
+}
+
+.form-input-group:focus-within {
+  border-color: #3d5c69;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(61, 92, 105, 0.16);
+}
+
+.form-input {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13.5px;
+  color: #1e293b;
+  padding: 0;
+}
+
+.form-input::placeholder {
+  color: #647b87;
+  font-size: 13.5px;
+}
+
+/* Role Select for Register: Clean without icons */
+.form-role-select {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13.5px;
+  color: #1e293b;
+  cursor: pointer;
+  padding: 0;
+}
+
+.form-role-select option {
+  background: #ffffff;
+  color: #1e293b;
+  padding: 6px 12px;
+}
+
+/* Forgot Password link */
+.forgot-password-wrap {
+  text-align: right;
+  margin: -4px 0 14px 0;
+}
+
+.forgot-password-link {
+  color: #64748b;
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.forgot-password-link:hover {
+  color: #3d5c69;
+  text-decoration: underline;
+}
+
+/* Main Pill CTA Button */
+.form-submit-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 30px;
+  background: linear-gradient(90deg, #446471 0%, #2f4751 100%);
+  color: #ffffff;
+  border: none;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(47, 71, 81, 0.35);
+  transition: all 0.25s ease;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.form-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: linear-gradient(90deg, #517584 0%, #395561 100%);
+  box-shadow: 0 6px 20px rgba(47, 71, 81, 0.45);
+}
+
+.form-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Social Divider */
+.form-social-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 12px 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+.divider-text {
+  color: #94a3b8;
+  font-size: 11.5px;
+  text-transform: lowercase;
+}
+
+.form-google-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+/* Form prompt above Google Login ("Already have an account? Login") */
+.form-switch-prompt {
+  text-align: center;
+  font-size: 13.5px;
+  color: #556c77;
+  margin: 12px 0 10px 0;
+  display: block;
+}
+
+/* Mobile-only toggle fallback text */
+.mobile-switch-text {
+  display: none;
+  text-align: center;
+  font-size: 13px;
+  color: #64748b;
+  margin: 14px 0 0 0;
+}
+
+.switch-inline-btn {
+  background: none;
+  border: none;
+  color: #223740;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  text-decoration: underline;
+  font-size: 13.5px;
+  transition: color 0.2s ease;
+}
+
+.switch-inline-btn:hover {
+  color: #121e24;
+}
+
+/* ==========================================================================
+   CURVED SLIDING WELCOME PANEL (HAS USER'S 3D CUBES DESIGN - SLIGHTLY DARKER THAN BG)
+   ========================================================================== */
+.welcome-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 45%;
+  height: 100%;
+  z-index: 5;
+  background: linear-gradient(135deg, rgba(68, 100, 113, 0.12) 0%, rgba(30, 48, 56, 0.22) 100%),
+              url('../assets/login-bg.png') center center / cover no-repeat;
+  /* Smooth outward organic curve on the right edge */
+  border-radius: 30px 150px 150px 30px / 30px 50% 50% 30px;
+  box-shadow: 6px 0 25px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.75s cubic-bezier(0.77, 0, 0.175, 1);
+  overflow: hidden;
+}
+
+/* When in Register Mode: slides to the right and flips curve towards left */
+.login-card-container.active .welcome-panel {
+  left: 55%;
+  border-radius: 150px 30px 30px 150px / 50% 30px 30px 50%;
+  box-shadow: -6px 0 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Welcome Panel Contents */
+.welcome-content {
+  position: absolute;
+  width: 100%;
+  padding: 40px 32px;
+  box-sizing: border-box;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  transition: transform 0.65s cubic-bezier(0.77, 0, 0.175, 1), opacity 0.45s ease;
+}
+
+/* Sign In Welcome Text (visible during login mode) */
+.welcome-content.welcome-signin {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -24px);
+}
+
+.login-card-container.active .welcome-content.welcome-signin {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-60px, -24px);
+}
+
+/* Sign Up Welcome Text (visible during register mode) */
+.welcome-content.welcome-signup {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(60px, -24px);
+}
+
+.login-card-container.active .welcome-content.welcome-signup {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -24px);
+}
+
+.welcome-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 12px 0;
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.welcome-title.welcome-title-brand {
+  font-size: 38px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  margin: -10px 0 14px 0;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
+}
+
+.welcome-subtitle {
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 24px 0;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  max-width: 320px;
+}
+
+/* Pill Outline Switch Button */
+.welcome-pill-btn {
+  padding: 10px 36px;
+  border-radius: 30px;
+  border: 2px solid #ffffff;
+  background: transparent;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  transition: all 0.25s ease;
+}
+
+.welcome-pill-btn:hover {
+  background: #ffffff;
+  color: #263840;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   MOBILE & TABLET ADAPTATION
+   ========================================================================== */
+@media screen and (max-width: 860px) {
+  .login-card-container {
+    width: 100%;
+    max-width: 440px;
+    height: auto;
+    min-height: 560px;
+    flex-direction: column;
+  }
+
+  .welcome-panel {
+    display: none;
+  }
+
+  .form-box {
+    position: relative;
+    width: 100%;
+    height: auto;
+    padding: 36px 28px;
+  }
+
+  .form-box.login-box {
+    display: flex;
+  }
+
+  .login-card-container.active .form-box.login-box {
+    display: none;
+  }
+
+  .form-box.register-box {
+    display: none;
+    transform: none;
+    left: auto;
+  }
+
+  .login-card-container.active .form-box.register-box {
+    display: flex;
+    transform: none;
+  }
+
+  .mobile-switch-text {
+    display: block;
+  }
+}

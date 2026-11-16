@@ -9,13 +9,20 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['teacher', 'student'],
     default: 'student'
-  }
+  },
+  resetPasswordOtp: { type: String },
+  resetPasswordExpires: { type: Date }
 }, { timestamps: true });
 
 userSchema.methods.matchPassword = async function(enteredPassword) {
   if (!enteredPassword || !this.password) return false;
-  const bcrypt = require('bcryptjs');
-  return await bcrypt.compare(enteredPassword, this.password);
+  try {
+    const bcrypt = require('bcryptjs');
+    return await bcrypt.compare(enteredPassword, this.password);
+  } catch (err) {
+    console.error('Password compare error:', err);
+    return false;
+  }
 };
 
 module.exports = mongoose.model('User', userSchema);

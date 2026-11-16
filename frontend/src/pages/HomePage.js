@@ -1,975 +1,1280 @@
-import logo from '../assets/logo.png';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import './HomePage.css';
 
-// ── Magnetic Button ─────────────────────────────────────────────────
-const MagBtn = ({ children, className, onClick, style }) => {
-  const ref = useRef(null);
-  const onMove = (e) => {
-    const r = ref.current.getBoundingClientRect();
-    const x = e.clientX - r.left - r.width / 2;
-    const y = e.clientY - r.top - r.height / 2;
-    ref.current.style.transform = `translate(${x * 0.18}px, ${y * 0.18}px)`;
-  };
-  const onLeave = () => { ref.current.style.transform = 'translate(0,0)'; };
-  return (
-    <button ref={ref} className={className} onClick={onClick} style={{ transition: 'transform 0.4s cubic-bezier(0.23,1,0.32,1)', ...style }}
-      onMouseMove={onMove} onMouseLeave={onLeave}>{children}</button>
-  );
-};
-
-// ── Animated Counter ────────────────────────────────────────────────
-const Counter = ({ end, suffix = '', duration = 2000 }) => {
-  const [val, setVal] = useState(0);
-  const ref = useRef(null);
-  useEffect(() => {
-    const ob = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        const t0 = performance.now();
-        const tick = (now) => {
-          const p = Math.min((now - t0) / duration, 1);
-          setVal(Math.floor(end * (1 - Math.pow(1 - p, 4))));
-          if (p < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-        ob.disconnect();
+const WHY_TOPICS = [
+  {
+    index: 0,
+    slug: 'what-is-classmeet',
+    pill: 'Discover Our Platform',
+    titleHtml: 'What is <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">ClassMeet</span>?',
+    subtitle: 'An AI-powered smart classroom platform that brings teaching, learning, and collaboration together.',
+    desc: 'ClassMeet is an AI-powered smart classroom ecosystem purpose-built for synchronous education, peer collaboration, and verified engagement — replacing fragmented corporate video tools with a unified learning theater.',
+    image: '/card1_what_is_classmeet.png',
+    badge: 'Synchronous Lecture Theater • On-Device AI',
+    features: [
+      {
+        title: 'Academic-First Virtual Space',
+        desc: 'Built specifically for lecture workflows, structured student questions, and active participation.'
+      },
+      {
+        title: 'Zero-Install WebRTC Access',
+        desc: 'Join instantly in any browser without installing intrusive desktop clients or background daemons.'
+      },
+      {
+        title: 'Privacy-Preserving On-Device AI',
+        desc: 'Blink authentication & focus analytics execute in the local browser — zero biometric cloud storage.'
+      },
+      {
+        title: 'Live Collaborative Immersion',
+        desc: 'Interactive whiteboards, synchronized code notebooks, and real-time breakout pods in one tab.'
       }
-    }, { threshold: 0.5 });
-    if (ref.current) ob.observe(ref.current);
-    return () => ob.disconnect();
-  }, [end, duration]);
-  return <span ref={ref}>{val.toLocaleString()}{suffix}</span>;
-};
+    ]
+  },
+  {
+    index: 1,
+    slug: 'our-mission',
+    pill: 'Our Purpose',
+    titleHtml: 'Our <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">Mission</span>',
+    subtitle: 'Making virtual education smarter, more interactive, and genuinely meaningful.',
+    desc: 'We believe digital classrooms should elevate human connection, not reduce learning to passive screen watching. Our mission is to end the "black tile syndrome" and empower educators with real-time pedagogical feedback.',
+    image: '/card2_our_mission.png',
+    badge: 'Human Connection First • Active Pedagogy',
+    features: [
+      {
+        title: 'Reigniting Classroom Focus',
+        desc: 'Thoughtful non-invasive feedback loops that naturally re-engage students without punitive pressure.'
+      },
+      {
+        title: 'Equal Access for Every Learner',
+        desc: 'Sub-50ms peer mesh streaming with adaptive bitrates optimized for low-bandwidth connections.'
+      },
+      {
+        title: 'Empowering Educators',
+        desc: 'Instant pedagogical heatmaps and automated roster tracking so teachers focus 100% on teaching.'
+      },
+      {
+        title: 'Active Interactive Reactions',
+        desc: 'Non-disruptive feedback, polls, and live questions that keep remote classrooms vibrant and lively.'
+      }
+    ]
+  },
+  {
+    index: 2,
+    slug: 'why-we-built-it',
+    pill: 'The Inspiration',
+    titleHtml: 'Why We <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">Built It</span>',
+    subtitle: 'Addressing the challenges and frustrations of traditional online learning environments.',
+    desc: 'Traditional online education broke down into awkward roll calls, proxy presence, intrusive proctoring plugins, and disconnected apps. ClassMeet was engineered from the ground up to solve these chronic academic friction points.',
+    image: '/card3_why_we_built_it.jpg',
+    badge: 'No Spyware • Automated Roster • Unified Hub',
+    features: [
+      {
+        title: 'Ending the Roll Call Dilemma',
+        desc: 'Automates attendance in the first 10 seconds of class without wasting valuable teaching minutes.'
+      },
+      {
+        title: 'Defeating Proxy Tricks',
+        desc: 'Liveness verification using dynamic micro-actions (e.g. natural eye blinks) directly on device.'
+      },
+      {
+        title: 'Eliminating Invasive Software',
+        desc: 'No kernel-level drivers or third-party spyware — runs entirely in the standard secure browser sandbox.'
+      },
+      {
+        title: 'Unified Academic Toolset',
+        desc: 'Chat, attendance, notes, shared boards, and proctored quizzes live under one seamless interface.'
+      }
+    ]
+  },
+  {
+    index: 3,
+    slug: 'what-makes-us-different',
+    pill: 'Our Identity',
+    titleHtml: 'What Makes Us <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">Different</span>?',
+    subtitle: 'Going far beyond standard video meetings with intelligent classroom infrastructure.',
+    desc: 'While generic tools treat video calls as static camera tiles, ClassMeet embeds machine intelligence directly into the learning experience — offering real-time participation heatmaps, instant transcription, and smart peer assistance.',
+    image: null,
+    badge: 'Edge Neural AI • Sub-50ms Ultra Mesh',
+    features: [
+      {
+        title: 'Edge AI Processing',
+        desc: 'Neural inferences run on the browser client, ensuring instantaneous response with zero server overhead.'
+      },
+      {
+        title: 'Integrated Anti-Cheat Proctoring',
+        desc: 'Dual-camera angle support and tab-switch detection built directly into examination modes.'
+      },
+      {
+        title: 'Adaptive Pedagogy Engine',
+        desc: 'Automatically highlights concepts where student questions spike to help instructors clarify live.'
+      },
+      {
+        title: 'Sub-50ms Peer Mesh Network',
+        desc: 'Custom WebRTC mesh network with crystal-clear audio prioritization and zero jitter.'
+      }
+    ]
+  },
+  {
+    index: 4,
+    slug: 'who-is-it-for',
+    pill: 'Our Community',
+    titleHtml: 'Who Is It <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">For</span>?',
+    subtitle: 'Purpose-built for modern students, dedicated educators, and visionary educational institutions.',
+    desc: 'Whether you are a university professor conducting 300-student STEM lectures, a coding bootcamp running peer-programming labs, or an online academy teaching global students — ClassMeet provides the exact controls and workflows needed.',
+    image: null,
+    badge: 'Universities • K-12 • Academies • Tutors',
+    features: [
+      {
+        title: 'Universities & Colleges',
+        desc: 'Campus-wide roster sync, LMS (Canvas/Moodle/Blackboard) integrations, and accredited attendance reporting.'
+      },
+      {
+        title: 'Educators & Instructors',
+        desc: 'Effortless class moderation, hand-raising queues, whiteboard controls, and breakout rooms.'
+      },
+      {
+        title: 'Students & Study Groups',
+        desc: 'Rich collaborative workspaces, automatic lecture bookmarking, and peer project pods.'
+      },
+      {
+        title: 'Coaching & Training Centers',
+        desc: 'Custom branding, student performance analytics, and automated certification workflows.'
+      }
+    ]
+  },
+  {
+    index: 5,
+    slug: 'why-choose-us',
+    pill: 'Our Value',
+    titleHtml: 'Why <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">Choose Us</span>?',
+    subtitle: 'Bringing communication, learning, and academic administration into one frictionless experience.',
+    desc: 'Institutions choose ClassMeet because it replaces an expensive patchwork of 4 separate subscriptions (video tool + attendance add-on + proctoring vendor + whiteboard software) with a unified, cost-effective platform students love.',
+    image: null,
+    badge: '99.98% High Availability • 40% Admin Saved',
+    features: [
+      {
+        title: '40% Administrative Time Saved',
+        desc: 'Eliminate manual roll calls, spreadsheet reconciliation, and attendance disputes forever.'
+      },
+      {
+        title: '99.98% High Availability',
+        desc: 'Redundant global edge infrastructure guaranteed to stay online during critical exam periods.'
+      },
+      {
+        title: 'Total Privacy Compliance',
+        desc: 'Fully compliant with FERPA, GDPR, and academic data residency regulations.'
+      },
+      {
+        title: 'Frictionless Zero-Cost Setup',
+        desc: 'Start teaching immediately without IT onboarding delays or expensive hardware requirements.'
+      }
+    ]
+  },
+  {
+    index: 6,
+    slug: 'our-vision',
+    pill: 'Looking Ahead',
+    titleHtml: 'Our <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] to-[#38BDF8]">Vision</span>',
+    subtitle: 'Building a more connected, intelligent, and borderless future for global digital education.',
+    desc: 'We envision a world where geography never limits access to world-class education. ClassMeet is building the foundational operating system for next-generation virtual universities, collaborative cross-border research, and lifelong mentorship.',
+    image: null,
+    badge: 'Global Connected Campus • Borderless Education',
+    features: [
+      {
+        title: 'Global Interconnected Campus',
+        desc: 'Connecting classrooms across continents for joint seminars, cultural exchanges, and research.'
+      },
+      {
+        title: 'AI-Assisted Personalized Pedagogy',
+        desc: 'Real-time AI tutors that generate contextual quizzes and summaries tailored to each student.'
+      },
+      {
+        title: 'Universal Accessibility',
+        desc: 'Multi-language live captioning, sign-language recognition, and screen-reader optimizations.'
+      },
+      {
+        title: 'Verifiable Academic Credentials',
+        desc: 'Cryptographically verified participation and attendance records portable to student transcripts.'
+      }
+    ]
+  }
+];
 
-// ── Floating Particle ───────────────────────────────────────────────
-const Particles = () => {
-  const canvasRef = useRef(null);
+const HomePage = ({ onGetStarted, onLogin }) => {
+  const navigate = useNavigate();
+
+  // Navigation states
+  const [activeNav, setActiveNav] = useState('home');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Modal states
+  const [signUpModalOpen, setSignUpModalOpen] = useState(false);
+  const [joinClassModalOpen, setJoinClassModalOpen] = useState(false);
+  const [demoModalOpen, setDemoModalOpen] = useState(false);
+
+  // Form states
+  const [joinRoomCode, setJoinRoomCode] = useState('');
+  const [joinStudentName, setJoinStudentName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactInst, setContactInst] = useState('');
+  const [contactMsg, setContactMsg] = useState('');
+
+  // Toast hub
+  const [toasts, setToasts] = useState([]);
+
+  // 3D Carousel states
+  const totalCards = 7;
+  const angleStep = 360 / totalCards;
+  const [virtualIndex, setVirtualIndex] = useState(0);
+  const [activeTopicIndex, setActiveTopicIndex] = useState(0);
+  const [pulseDetails, setPulseDetails] = useState(false);
+  const [radius, setRadius] = useState(245);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const dragDistanceRef = useRef(0);
+  const isHoveredRef = useRef(false);
+  const autoTimerRef = useRef(null);
+
+  const cylinderRef = useRef(null);
+  const stageRef = useRef(null);
+  const detailsPanelRef = useRef(null);
+
+  const showToast = useCallback((msg) => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, msg }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3200);
+  }, []);
+
+  // Update radius on resize
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    let W = canvas.width = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
-    const particles = Array.from({ length: 55 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      r: Math.random() * 1.5 + 0.3,
-      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
-      alpha: Math.random() * 0.3 + 0.08,
-      color: Math.random() > 0.5 ? '37,99,235' : '13,148,136',
-    }));
-    let raf;
-    const draw = () => {
-      ctx.clearRect(0, 0, W, H);
-      particles.forEach(p => {
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${p.color},${p.alpha})`;
-        ctx.fill();
-      });
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 100) {
-            ctx.beginPath();
-            ctx.strokeStyle = `rgba(37,99,235,${0.05 * (1 - dist / 100)})`;
-            ctx.lineWidth = 0.5;
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
+    const calcRadius = () => {
+      const w = window.innerWidth;
+      if (w < 480) return 210;
+      if (w < 768) return 235;
+      if (w < 1024) return 255;
+      return 245;
+    };
+    const handleResize = () => setRadius(calcRadius());
+    setRadius(calcRadius());
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Scroll spy
+  useEffect(() => {
+    const handleScroll = () => {
+      const sections = ['home', 'why-classmeet', 'features', 'how-it-works', 'about-us', 'contact'];
+      const scrollPos = window.scrollY + 140;
+      for (const id of sections) {
+        const el = document.getElementById(id);
+        if (el) {
+          const top = el.offsetTop;
+          const height = el.offsetHeight;
+          if (scrollPos >= top && scrollPos < top + height) {
+            setActiveNav(id);
+            break;
           }
         }
       }
-      raf = requestAnimationFrame(draw);
     };
-    draw();
-    const onResize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
-    window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-  return <canvas ref={canvasRef} style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }} />;
-};
 
-// ── Feature Card (3D tilt) ──────────────────────────────────────────
-const TiltCard = ({ children, style, className }) => {
-  const ref = useRef(null);
-  const onMove = (e) => {
-    const r = ref.current.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;
-    const y = (e.clientY - r.top) / r.height - 0.5;
-    ref.current.style.transform = `perspective(800px) rotateY(${x * 10}deg) rotateX(${-y * 10}deg) scale(1.02)`;
-    ref.current.style.boxShadow = `${-x * 20}px ${-y * 20}px 40px rgba(15,23,42,0.08), 0 0 30px rgba(37,99,235,${Math.abs(x) * 0.18 + 0.04})`;
-  };
-  const onLeave = () => {
-    ref.current.style.transform = 'perspective(800px) rotateY(0) rotateX(0) scale(1)';
-    ref.current.style.boxShadow = '';
-  };
-  return (
-    <div ref={ref} className={className} style={{ transition: 'transform 0.4s cubic-bezier(0.23,1,0.32,1), box-shadow 0.4s', ...style }}
-      onMouseMove={onMove} onMouseLeave={onLeave}>{children}</div>
-  );
-};
-
-// ═══════════════════════════════════════════════════════════════════
-const HomePage = ({ onGetStarted, onLogin }) => {
-  const [navScrolled, setNavScrolled] = useState(false);
-  const [activeFeature, setActiveFeature] = useState(0);
-  const [videoOpen, setVideoOpen] = useState(false);
-  const [typedText, setTypedText] = useState('');
-  const [wordIdx, setWordIdx] = useState(0);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const cursorRef = useRef(null);
-  const cursorDotRef = useRef(null);
-
-  const words = ['Attendance.', 'Whiteboard.', 'Live Quizzes.', 'Breakout Rooms.', 'Private Vivas.'];
-
-  // typewriter
-  useEffect(() => {
-    const curr = words[wordIdx];
-    const t = setTimeout(() => {
-      if (!isDeleting) {
-        if (typedText.length < curr.length) setTypedText(curr.slice(0, typedText.length + 1));
-        else setTimeout(() => setIsDeleting(true), 1800);
-      } else {
-        if (typedText.length > 0) setTypedText(curr.slice(0, typedText.length - 1));
-        else { setIsDeleting(false); setWordIdx(i => (i + 1) % words.length); }
+  // Rotate 3D carousel
+  const rotateTo = useCallback((newVirtIdx, updateDetails = true, pulse = false) => {
+    setVirtualIndex(newVirtIdx);
+    const norm = ((newVirtIdx % totalCards) + totalCards) % totalCards;
+    if (updateDetails) {
+      setActiveTopicIndex(norm);
+      if (pulse) {
+        setPulseDetails(true);
+        setTimeout(() => setPulseDetails(false), 700);
       }
-    }, isDeleting ? 55 : 110);
-    return () => clearTimeout(t);
-  }, [typedText, isDeleting, wordIdx]);
+    }
+  }, [totalCards]);
 
-  // cursor
+  const handleNextCard = useCallback(() => {
+    rotateTo(virtualIndex + 1);
+  }, [virtualIndex, rotateTo]);
+
+  const handlePrevCard = useCallback(() => {
+    rotateTo(virtualIndex - 1);
+  }, [virtualIndex, rotateTo]);
+
+  // Auto rotation
   useEffect(() => {
-    let cx = -200, cy = -200;
-    let tx = -200, ty = -200;
-    const move = (e) => { tx = e.clientX; ty = e.clientY; };
-    window.addEventListener('mousemove', move);
-    const tick = () => {
-      cx += (tx - cx) * 0.12; cy += (ty - cy) * 0.12;
-      if (cursorRef.current) { cursorRef.current.style.left = `${tx}px`; cursorRef.current.style.top = `${ty}px`; }
-      if (cursorDotRef.current) { cursorDotRef.current.style.left = `${cx}px`; cursorDotRef.current.style.top = `${cy}px`; }
-      requestAnimationFrame(tick);
-    };
-    const raf = requestAnimationFrame(tick);
-    return () => { window.removeEventListener('mousemove', move); cancelAnimationFrame(raf); };
-  }, []);
+    const timer = setInterval(() => {
+      if (!isHoveredRef.current && !isDraggingRef.current && document.visibilityState === 'visible') {
+        setVirtualIndex((prev) => {
+          const next = prev + 1;
+          const norm = ((next % totalCards) + totalCards) % totalCards;
+          setActiveTopicIndex(norm);
+          return next;
+        });
+      }
+    }, 4000);
+    autoTimerRef.current = timer;
+    return () => clearInterval(timer);
+  }, [totalCards]);
 
-  useEffect(() => {
-    const s = () => setNavScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', s);
-    return () => window.removeEventListener('scroll', s);
-  }, []);
+  // Mouse / Touch Drag handlers for 3D stage
+  const onPointerDown = (clientX) => {
+    isDraggingRef.current = true;
+    startXRef.current = clientX;
+    dragDistanceRef.current = 0;
+    if (cylinderRef.current) {
+      cylinderRef.current.classList.add('no-transition');
+    }
+  };
 
-  const features = [
-    {
-      icon: '👁️', label: 'AI Attendance', color: '#0D9488',
-      title: 'Face Detection Attendance',
-      desc: 'AI scans every face as class starts. Students marked present instantly — full timestamped reports auto-generated.',
-      pills: ['Real-time scan', 'Excel export', 'Low-light support'],
-      img: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=700&q=85&fit=crop',
-    },
-    {
-      icon: '🖊️', label: 'Smart Whiteboard', color: '#2563EB',
-      title: 'Intelligent Smart Whiteboard',
-      desc: 'Infinite canvas that feels like a real smart classroom board. Handwriting recognition, math templates, multi-user live drawing.',
-      pills: ['Infinite canvas', 'Shape recognition', 'Multi-user'],
-      img: 'https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=700&q=85&fit=crop',
-    },
-    {
-      icon: '⚡', label: 'Live Quiz', color: '#7C3AED',
-      title: 'AI-Proctored Live Quiz',
-      desc: 'Launch quizzes mid-class. Tab switch = auto-submit. AI detects suspicious patterns. Live leaderboard appears instantly.',
-      pills: ['Anti-cheat', 'Live leaderboard', 'AI proctoring'],
-      img: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=700&q=85&fit=crop',
-    },
-    {
-      icon: '🎙️', label: 'Private Viva', color: '#D97706',
-      title: 'Private Viva Room',
-      desc: 'Oral exams without disrupting class. AI randomly selects a student, sends private notification, opens a secure one-on-one room.',
-      pills: ['Random selection', 'Private room', 'Auto-recorded'],
-      img: 'https://images.unsplash.com/photo-1560439514-4e9645039924?w=700&q=85&fit=crop',
-    },
-    {
-      icon: '👥', label: 'Breakout Rooms', color: '#059669',
-      title: 'Smart Breakout Rooms',
-      desc: 'Split class into groups in 2 seconds. Set timers, hop between rooms, students auto-return when time is up.',
-      pills: ['Instant groups', 'Auto-return', 'Teacher visits'],
-      img: 'https://images.unsplash.com/photo-1543269664-7eef42226a21?w=700&q=85&fit=crop',
-    },
-    {
-      icon: '📄', label: 'PDF Viewer', color: '#E11D48',
-      title: 'In-Class PDF Viewer',
-      desc: 'Upload PDF, teach from it live — no screen share needed. Students follow the same page. Annotate and highlight live.',
-      pills: ['No screen share', 'Live annotation', 'Auto-sync'],
-      img: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=700&q=85&fit=crop',
-    },
-  ];
+  const onPointerMove = (clientX) => {
+    if (!isDraggingRef.current || !cylinderRef.current) return;
+    dragDistanceRef.current = clientX - startXRef.current;
+    const baseAngle = -virtualIndex * angleStep;
+    cylinderRef.current.style.transform = `rotateY(${baseAngle + dragDistanceRef.current * 0.22}deg)`;
+  };
 
-  const af = features[activeFeature];
+  const onPointerUp = () => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    if (cylinderRef.current) {
+      cylinderRef.current.classList.remove('no-transition');
+    }
+    const dist = dragDistanceRef.current;
+    if (dist < -45) {
+      rotateTo(virtualIndex + 1);
+    } else if (dist > 45) {
+      rotateTo(virtualIndex - 1);
+    } else {
+      rotateTo(virtualIndex);
+    }
+  };
+
+  const handleExploreClick = (idx, e) => {
+    e.preventDefault();
+    const currNorm = ((virtualIndex % totalCards) + totalCards) % totalCards;
+    let diff = (idx - currNorm + totalCards) % totalCards;
+    if (diff > 3) diff -= 7;
+    rotateTo(virtualIndex + diff, true, true);
+    if (window.innerWidth < 1024 && detailsPanelRef.current) {
+      detailsPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  };
+
+  const handleTopicTabClick = (idx) => {
+    const currNorm = ((virtualIndex % totalCards) + totalCards) % totalCards;
+    let diff = (idx - currNorm + totalCards) % totalCards;
+    if (diff > 3) diff -= 7;
+    rotateTo(virtualIndex + diff, true, true);
+  };
+
+  const handleNextTopic = () => {
+    const nextVirt = virtualIndex + 1;
+    rotateTo(nextVirt, true, true);
+  };
+
+  const handleJoinClassSubmit = (e) => {
+    e.preventDefault();
+    if (!joinRoomCode.trim()) {
+      showToast('Please enter a valid Room Code');
+      return;
+    }
+    setJoinClassModalOpen(false);
+    showToast(`Connecting to room ${joinRoomCode.toUpperCase()}...`);
+    navigate(`/room/${joinRoomCode.trim().toUpperCase()}`);
+  };
+
+  const handleContactSubmit = (e) => {
+    e.preventDefault();
+    showToast('Inquiry received. An engineer will reach out shortly.');
+    setContactName('');
+    setContactEmail('');
+    setContactInst('');
+    setContactMsg('');
+  };
+
+  const handleSignUpSubmit = (e) => {
+    e.preventDefault();
+    setSignUpModalOpen(false);
+    if (onGetStarted) {
+      onGetStarted();
+    } else {
+      navigate('/register');
+    }
+  };
+
+  const currentTopic = WHY_TOPICS[activeTopicIndex] || WHY_TOPICS[0];
+  const targetCylinderAngle = -virtualIndex * angleStep;
+  const currentNormalized = ((virtualIndex % totalCards) + totalCards) % totalCards;
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+    <div className="min-h-screen bg-[#000B18] text-white font-sans relative overflow-x-hidden selection:bg-[#18D5FD] selection:text-[#000E1D]">
+      {/* ── Fixed Full Background Image ── */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-[#000B18]" aria-hidden="true">
+        <img
+          src="/background.png"
+          alt="ClassMeet Background"
+          className="w-full h-full object-cover object-center pointer-events-none select-none"
+        />
+      </div>
 
-        :root {
-          --bg: #EAF2FB;
-          --s1: #FFFFFF;
-          --s2: #F3F8FE;
-          --s3: #E7F0FC;
-          --b1: rgba(15,52,96,0.08);
-          --b2: rgba(15,52,96,0.14);
-          --t: #0F2647;
-          --m: rgba(15,38,71,0.58);
-          --a: #2563EB;
-          --g: #0D9488;
-          --fh: 'Bricolage Grotesque', sans-serif;
-          --fb: 'DM Sans', sans-serif;
-        }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
-        body { background: var(--bg); }
-
-        .hp { font-family: var(--fb); background: var(--bg); color: var(--t); min-height: 100vh; overflow-x: hidden; cursor: none; }
-
-        /* ── CURSOR ── */
-        .hp-cursor {
-          position: fixed; width: 36px; height: 36px;
-          border: 1.5px solid rgba(13,148,136,0.45); border-radius: 50%;
-          pointer-events: none; z-index: 9999;
-          transform: translate(-50%,-50%);
-          transition: width 0.3s, height 0.3s, border-color 0.3s, background 0.3s;
-        }
-        .hp-cursor-dot {
-          position: fixed; width: 4px; height: 4px;
-          background: #0D9488; border-radius: 50%;
-          pointer-events: none; z-index: 9999;
-          transform: translate(-50%,-50%);
-        }
-        .hp a:hover ~ .hp-cursor, .hp button:hover ~ .hp-cursor {
-          width: 56px; height: 56px; background: rgba(13,148,136,0.08); border-color: rgba(13,148,136,0.7);
-        }
-
-        /* ── BG EFFECTS ── */
-        .hp-bg {
-          position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
-          background: linear-gradient(180deg, #EAF2FB 0%, #F3F8FE 45%, #EAF2FB 100%);
-        }
-        .hp-orb {
-          position: absolute; border-radius: 50%; filter: blur(120px);
-          animation: orbDrift 20s ease-in-out infinite;
-        }
-        .hp-orb-1 { width: 700px; height: 700px; background: rgba(37,99,235,0.10); top: -200px; left: -150px; animation-delay: 0s; }
-        .hp-orb-2 { width: 500px; height: 500px; background: rgba(13,148,136,0.09); bottom: -100px; right: -100px; animation-delay: -7s; }
-        .hp-orb-3 { width: 400px; height: 400px; background: rgba(124,58,237,0.06); top: 40%; left: 40%; animation-delay: -14s; }
-        @keyframes orbDrift {
-          0%,100%{transform:translate(0,0) scale(1)}
-          33%{transform:translate(30px,-20px) scale(1.05)}
-          66%{transform:translate(-20px,30px) scale(0.95)}
-        }
-        .hp-grid {
-          position: fixed; inset: 0; pointer-events: none; z-index: 0;
-          background-image:
-            linear-gradient(rgba(15,52,96,0.035) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(15,52,96,0.035) 1px, transparent 1px);
-          background-size: 52px 52px;
-          mask-image: radial-gradient(ellipse 100% 80% at 50% 0%, black 20%, transparent 70%);
-        }
-
-        /* ── NAV ── */
-        .hp-nav {
-          position: sticky; top: 0; z-index: 100;
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 0 56px; height: 72px;
-          background: rgba(234,242,251,0.72);
-          backdrop-filter: blur(18px) saturate(1.4);
-          border-bottom: 1px solid transparent;
-          transition: all 0.4s cubic-bezier(0.23,1,0.32,1);
-        }
-        .hp-nav.sc {
-          background: rgba(255,255,255,0.86); backdrop-filter: blur(24px) saturate(1.6);
-          border-bottom: 1px solid var(--b1);
-          box-shadow: 0 1px 30px rgba(15,52,96,0.06);
-        }
-        .hp-logo { display: flex; align-items: center; gap: 11px; text-decoration: none; position: relative; z-index: 2; }
-        .hp-logo-name { font-family: var(--fh); font-size: 21px; font-weight: 800; color: var(--t); letter-spacing: -0.02em; }
-
-        .hp-nav-center { display: flex; align-items: center; gap: 34px; }
-        .hp-nav-links { display: flex; align-items: center; gap: 30px; }
-        .hp-nav-links a {
-          display: flex; align-items: center; gap: 5px;
-          color: #2A3A52; text-decoration: none; font-size: 14.5px; font-weight: 600;
-          transition: color 0.2s; position: relative; padding: 6px 0;
-        }
-        .hp-nav-links a svg { transition: transform 0.25s; opacity: 0.55; }
-        .hp-nav-links a:hover svg { transform: translateY(1px); }
-        .hp-nav-links a::after { content:''; position:absolute; bottom:0; left:0; width:0; height:2px; border-radius: 2px; background:var(--a); transition:width 0.3s cubic-bezier(0.23,1,0.32,1); }
-        .hp-nav-links a:hover { color: var(--a); }
-        .hp-nav-links a:hover::after { width: 100%; }
-
-        .hp-nav-r { display: flex; align-items: center; gap: 22px; }
-        .hp-icon-btn {
-          width: 38px; height: 38px; border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          background: rgba(15,52,96,0.05); border: 1px solid transparent; color: #2A3A52;
-          cursor: pointer; transition: all 0.25s;
-        }
-        .hp-icon-btn:hover { background: rgba(37,99,235,0.1); color: var(--a); }
-        .hp-nav-textlink {
-          display: flex; align-items: center; gap: 5px;
-          font-size: 14.5px; font-weight: 600; color: #2A3A52; text-decoration: none;
-          background: none; border: none; cursor: pointer; font-family: var(--fb);
-          transition: color 0.2s;
-        }
-        .hp-nav-textlink:hover { color: var(--a); }
-        .btn-solid-sm {
-          background: var(--a); border: none; color: #fff; padding: 11px 26px;
-          border-radius: 100px; font-size: 14px; font-weight: 700; cursor: pointer;
-          font-family: var(--fb); transition: all 0.3s;
-          box-shadow: 0 8px 22px rgba(37,99,235,0.28);
-        }
-        .btn-solid-sm:hover { background: #1D4ED8; transform: translateY(-1px); box-shadow: 0 10px 28px rgba(37,99,235,0.38); }
-
-        /* ── HERO ── */
-        .hp-hero {
-          position: relative; z-index: 5;
-          min-height: 92vh; display: flex; align-items: center;
-          padding: 0 64px;
-          overflow: hidden;
-        }
-        .hp-hero-inner { max-width: 1200px; margin: 0 auto; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
-
-        .hp-hero-left {}
-        .hp-pill {
-          display: inline-flex; align-items: center; gap: 8px;
-          background: rgba(13,148,136,0.09); border: 1px solid rgba(13,148,136,0.22);
-          color: #0D7468; font-size: 12px; font-weight: 600;
-          padding: 5px 14px 5px 8px; border-radius: 100px; margin-bottom: 30px;
-          animation: pillGlow 3s ease-in-out infinite;
-        }
-        @keyframes pillGlow { 0%,100%{box-shadow:0 0 0 rgba(13,148,136,0)} 50%{box-shadow:0 0 20px rgba(13,148,136,0.16)} }
-        .hp-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #0D9488; animation: pdot 1.8s ease-in-out infinite; }
-        @keyframes pdot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.6)} }
-
-        .hp-hero h1 {
-          font-family: var(--fh);
-          font-size: clamp(44px, 5.8vw, 72px);
-          font-weight: 800; color: var(--t); line-height: 1.04;
-          letter-spacing: -0.03em; margin-bottom: 6px;
-        }
-        .hp-hero-typed {
-          font-family: var(--fh);
-          font-size: clamp(44px, 5.8vw, 72px);
-          font-weight: 800; line-height: 1.04;
-          letter-spacing: -0.03em; margin-bottom: 26px;
-          background: linear-gradient(90deg, #2563EB 0%, #0D9488 65%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-          min-height: 1.1em;
-        }
-        .hp-cursor-blink { display: inline-block; width: 3px; height: 0.85em; background: #0D9488; margin-left: 3px; vertical-align: middle; animation: cblink 1s step-end infinite; }
-        @keyframes cblink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-        .hp-sub { font-size: 17px; font-weight: 400; color: var(--m); line-height: 1.78; margin-bottom: 44px; max-width: 500px; }
-
-        .hp-ctas { display: flex; gap: 14px; margin-bottom: 52px; flex-wrap: wrap; }
-        .btn-hero-primary {
-          padding: 16px 38px; border-radius: 100px; font-size: 15px; font-weight: 700;
-          cursor: pointer; font-family: var(--fb); border: none; color: #fff;
-          background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-          box-shadow: 0 14px 34px rgba(37,99,235,0.32);
-          transition: all 0.4s cubic-bezier(0.23,1,0.32,1);
-          display: flex; align-items: center; gap: 9px;
-          position: relative; overflow: hidden;
-        }
-        .btn-hero-primary::before {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(135deg, rgba(255,255,255,0.18), transparent);
-          opacity: 0; transition: opacity 0.3s;
-        }
-        .btn-hero-primary:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 20px 46px rgba(37,99,235,0.42); }
-        .btn-hero-primary:hover::before { opacity: 1; }
-        .btn-hero-ghost {
-          padding: 16px 32px; border-radius: 100px; font-size: 15px; font-weight: 600;
-          cursor: pointer; font-family: var(--fb);
-          background: #fff; border: 1px solid var(--b2); color: var(--t);
-          transition: all 0.3s; display: flex; align-items: center; gap: 9px;
-          box-shadow: 0 4px 14px rgba(15,52,96,0.05);
-        }
-        .btn-hero-ghost:hover { background: var(--s2); border-color: rgba(37,99,235,0.3); transform: translateY(-4px); }
-
-        /* trust */
-        .hp-trust { display: flex; align-items: center; gap: 16px; }
-        .hp-avs { display: flex; }
-        .hp-av { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--bg); margin-left: -9px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
-        .hp-av:first-child { margin-left: 0; }
-        .hp-trust-t { font-size: 13px; color: var(--m); line-height: 1.5; }
-        .hp-trust-t strong { color: var(--t); font-weight: 700; }
-
-        /* Hero right — classroom mockup */
-        .hp-hero-r { position: relative; }
-        .hp-mockup {
-          border-radius: 20px; overflow: hidden;
-          border: 1px solid var(--b1);
-          box-shadow: 0 40px 90px rgba(15,52,96,0.16), 0 0 0 1px rgba(15,52,96,0.02);
-          position: relative;
-        }
-        .hp-mk-bar {
-          background: #F7FAFE; padding: 11px 16px;
-          display: flex; align-items: center; gap: 10px;
-          border-bottom: 1px solid var(--b1);
-        }
-        .hp-mk-dots { display: flex; gap: 5px; }
-        .hp-mk-dot { width: 10px; height: 10px; border-radius: 50%; }
-        .hp-mk-title { font-size: 12px; color: rgba(15,38,71,0.32); flex: 1; text-align: center; font-family: 'DM Mono', monospace; }
-        .hp-mk-body { background: #FFFFFF; display: grid; grid-template-columns: 1fr 200px; min-height: 320px; }
-        .hp-mk-video { position: relative; display: flex; flex-direction: column; padding: 14px; gap: 10px; border-right: 1px solid var(--b1); }
-        .hp-mk-main-cam {
-          flex: 1; border-radius: 12px; overflow: hidden; position: relative; min-height: 180px;
-          background: linear-gradient(135deg, #DCEBFB, #EAF2FB);
-        }
-        .hp-mk-main-cam img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0.92; }
-        .hp-mk-cam-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(15,38,71,0.45), transparent 50%); }
-        .hp-mk-cam-name { position: absolute; bottom: 10px; left: 12px; font-size: 11px; font-weight: 600; color: #fff; background: rgba(15,38,71,0.55); padding: 3px 8px; border-radius: 5px; backdrop-filter: blur(8px); }
-        .hp-mk-live { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; gap: 5px; background: rgba(225,29,72,0.14); border: 1px solid rgba(225,29,72,0.32); padding: 4px 9px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #E11D48; letter-spacing: 0.06em; }
-        .hp-mk-livedot { width: 5px; height: 5px; border-radius: 50%; background: #E11D48; animation: pdot 1.4s ease-in-out infinite; }
-        .hp-mk-cams { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-        .hp-mk-cam-sm {
-          border-radius: 8px; overflow: hidden; position: relative; aspect-ratio: 4/3;
-          background: linear-gradient(135deg, #DCEBFB, #EAF2FB);
-        }
-        .hp-mk-cam-sm img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0.85; }
-        .hp-mk-cam-sm-name { position: absolute; bottom: 4px; left: 6px; font-size: 9px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
-        .hp-mk-ai-badge { position: absolute; top: 6px; right: 6px; width: 14px; height: 14px; border-radius: 50%; background: #0D9488; display: flex; align-items: center; justify-content: center; font-size: 7px; color: #fff; }
-        .hp-mk-toolbar {
-          padding: 10px 14px;
-          background: #F7FAFE; border-top: 1px solid var(--b1);
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        .hp-mk-tool { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: rgba(15,52,96,0.05); border: 1px solid var(--b1); cursor: pointer; transition: background 0.2s; }
-        .hp-mk-tool.on { background: rgba(37,99,235,0.16); border-color: rgba(37,99,235,0.3); }
-        .hp-mk-tool.red { background: rgba(225,29,72,0.14); border-color: rgba(225,29,72,0.28); }
-        .hp-mk-sidebar { background: #FAFCFF; display: flex; flex-direction: column; }
-        .hp-mk-sb-head { padding: 10px 12px; border-bottom: 1px solid var(--b1); font-size: 11px; font-weight: 700; color: rgba(15,38,71,0.55); }
-        .hp-mk-msgs { padding: 10px 10px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-        .hp-mk-msg { display: flex; gap: 6px; }
-        .hp-mk-msg-av { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 7px; font-weight: 700; flex-shrink: 0; }
-        .hp-mk-msg-body { font-size: 10px; color: rgba(15,38,71,0.62); line-height: 1.4; }
-        .hp-mk-msg-name { font-size: 9px; color: rgba(15,38,71,0.35); margin-bottom: 2px; }
-        .hp-mk-ai-row { padding: 8px 10px; border-top: 1px solid var(--b1); background: rgba(13,148,136,0.07); }
-        .hp-mk-ai-text { font-size: 10px; color: #0D7468; font-weight: 600; display: flex; align-items: center; gap: 5px; }
-
-        /* Floating badges */
-        .hp-float {
-          position: absolute; background: #fff; backdrop-filter: blur(20px);
-          border: 1px solid var(--b1); border-radius: 14px; padding: 12px 16px;
-          box-shadow: 0 16px 40px rgba(15,52,96,0.14);
-          animation: floatUD 6s ease-in-out infinite;
-          transition: transform 0.4s cubic-bezier(0.23,1,0.32,1);
-          cursor: default;
-        }
-        .hp-float:hover { transform: scale(1.05) translateY(-4px) !important; }
-        .hp-f1 { bottom: -24px; left: -32px; animation-delay: 0s; }
-        .hp-f2 { top: -20px; right: -24px; animation-delay: -3s; }
-        .hp-f3 { bottom: 60px; right: -40px; animation-delay: -5s; }
-        @keyframes floatUD { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-        .hp-float-num { font-family: var(--fh); font-size: 22px; font-weight: 800; color: var(--t); line-height: 1; }
-        .hp-float-lbl { font-size: 11px; color: var(--m); margin-top: 2px; }
-        .hp-float-chip { font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
-
-        /* ── TICKER ── */
-        .hp-ticker {
-          position: relative; z-index: 5;
-          overflow: hidden; border-top: 1px solid var(--b1); border-bottom: 1px solid var(--b1);
-          padding: 15px 0; background: var(--s1);
-        }
-        .hp-ticker-track { display: flex; gap: 52px; animation: tick 28s linear infinite; white-space: nowrap; width: max-content; }
-        .hp-ticker-track:hover { animation-play-state: paused; }
-        @keyframes tick { from{transform:translateX(0)} to{transform:translateX(-50%)} }
-        .hp-tick { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--m); }
-        .hp-tick span { color: var(--t); font-weight: 600; }
-        .hp-tick-sep { width: 4px; height: 4px; border-radius: 50%; background: var(--a); flex-shrink: 0; }
-
-        /* ── STATS ── */
-        .hp-stats {
-          position: relative; z-index: 5;
-          display: grid; grid-template-columns: repeat(4, 1fr);
-          max-width: 1100px; margin: 80px auto 0;
-          border: 1px solid var(--b1); border-radius: 22px; overflow: hidden;
-          background: var(--s1);
-          box-shadow: 0 20px 50px rgba(15,52,96,0.06);
-        }
-        .hp-stat {
-          padding: 44px 32px; text-align: center;
-          border-right: 1px solid var(--b1); position: relative; overflow: hidden;
-          transition: background 0.3s; cursor: default;
-        }
-        .hp-stat:last-child { border-right: none; }
-        .hp-stat:hover { background: var(--s2); }
-        .hp-stat-glow { position: absolute; inset: 0; background: radial-gradient(circle at 50% 100%, rgba(37,99,235,0.07), transparent 60%); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
-        .hp-stat:hover .hp-stat-glow { opacity: 1; }
-        .hp-stat-line { position: absolute; bottom: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, var(--a), var(--g)); transition: width 0.8s cubic-bezier(0.23,1,0.32,1); }
-        .hp-stat:hover .hp-stat-line { width: 100%; }
-        .hp-stat-num { font-family: var(--fh); font-size: 42px; font-weight: 800; color: var(--t); display: block; line-height: 1; }
-        .hp-stat-lbl { font-size: 13px; color: var(--m); margin-top: 8px; }
-
-        /* ── SECTION ── */
-        .hp-sec { position: relative; z-index: 5; max-width: 1200px; margin: 0 auto; padding: 100px 64px; }
-        .hp-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--g); margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
-        .hp-eyebrow::before { content: ''; width: 28px; height: 1.5px; background: var(--g); border-radius: 1px; }
-        .hp-sec-h { font-family: var(--fh); font-size: clamp(30px, 4vw, 50px); font-weight: 800; color: var(--t); line-height: 1.1; letter-spacing: -0.025em; margin-bottom: 12px; }
-        .hp-sec-sub { font-size: 16px; color: var(--m); line-height: 1.68; max-width: 480px; margin-bottom: 56px; }
-
-        /* ── FEATURES ── */
-        .hp-ftabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 44px; }
-        .hp-ftab {
-          display: flex; align-items: center; gap: 8px;
-          padding: 10px 18px; border-radius: 11px; cursor: pointer;
-          background: var(--s1); border: 1px solid var(--b1);
-          font-size: 13px; color: var(--m); font-family: var(--fb); font-weight: 500;
-          transition: all 0.3s cubic-bezier(0.23,1,0.32,1);
-          position: relative; overflow: hidden;
-        }
-        .hp-ftab:hover { color: var(--t); border-color: var(--b2); transform: translateY(-2px); }
-        .hp-ftab.on { font-weight: 700; transform: translateY(-2px); border-color: transparent; box-shadow: 0 8px 24px rgba(15,52,96,0.1); }
-
-        .hp-fpanel {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center;
-          background: var(--s1); border: 1px solid var(--b1);
-          border-radius: 24px; padding: 52px; position: relative; overflow: hidden;
-          box-shadow: 0 20px 60px rgba(15,52,96,0.07);
-        }
-        .hp-fpanel-glow { position: absolute; width: 350px; height: 350px; border-radius: 50%; filter: blur(100px); opacity: 0.16; top: -100px; right: -100px; pointer-events: none; transition: background 0.6s; }
-        .hp-ftag { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 12px; border-radius: 5px; display: inline-block; margin-bottom: 16px; }
-        .hp-ftitle { font-family: var(--fh); font-size: 32px; font-weight: 800; color: var(--t); line-height: 1.15; margin-bottom: 16px; letter-spacing: -0.02em; }
-        .hp-fdesc { font-size: 15px; color: var(--m); line-height: 1.75; margin-bottom: 28px; }
-        .hp-fpills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 32px; }
-        .hp-fpill { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 100px; }
-        .btn-f { display: inline-flex; align-items: center; gap: 8px; padding: 13px 26px; border-radius: 100px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: var(--fb); border: none; color: #fff; transition: all 0.3s cubic-bezier(0.23,1,0.32,1); }
-        .btn-f:hover { transform: translateY(-3px); }
-        .hp-fimg { border-radius: 18px; overflow: hidden; border: 1px solid var(--b1); position: relative; }
-        .hp-fimg img { width: 100%; height: 320px; object-fit: cover; display: block; transition: transform 0.7s cubic-bezier(0.23,1,0.32,1); }
-        .hp-fimg:hover img { transform: scale(1.05); }
-        .hp-fimg-shine { position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, transparent 50%); pointer-events: none; }
-
-        /* ── VIDEO SECTION ── */
-        .hp-demo { position: relative; z-index: 5; max-width: 1000px; margin: 0 auto; padding: 0 64px 80px; text-align: center; }
-        .hp-demo-thumb {
-          border-radius: 24px; overflow: hidden; cursor: pointer; position: relative;
-          border: 1px solid var(--b1);
-          box-shadow: 0 30px 80px rgba(15,52,96,0.14);
-          transition: all 0.4s cubic-bezier(0.23,1,0.32,1);
-        }
-        .hp-demo-thumb:hover { transform: translateY(-8px) scale(1.01); box-shadow: 0 40px 100px rgba(15,52,96,0.18), 0 0 0 1px rgba(37,99,235,0.2); }
-        .hp-demo-thumb img { width: 100%; height: 440px; object-fit: cover; display: block; filter: brightness(0.92); }
-        .hp-demo-over { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; background: rgba(15,38,71,0.28); }
-        .hp-play {
-          width: 90px; height: 90px; border-radius: 50%;
-          background: rgba(255,255,255,0.2); backdrop-filter: blur(16px);
-          border: 2px solid rgba(255,255,255,0.5);
-          display: flex; align-items: center; justify-content: center; font-size: 32px; color: #fff;
-          transition: all 0.4s cubic-bezier(0.23,1,0.32,1);
-        }
-        .hp-demo-thumb:hover .hp-play { background: var(--a); border-color: var(--a); transform: scale(1.12); box-shadow: 0 0 0 16px rgba(37,99,235,0.14), 0 0 50px rgba(37,99,235,0.3); }
-        .hp-play-lbl { font-size: 16px; font-weight: 600; color: #fff; letter-spacing: 0.02em; }
-
-        /* ── HOW IT WORKS ── */
-        .hp-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--b1); border-radius: 22px; overflow: hidden; border: 1px solid var(--b1); }
-        .hp-step { background: var(--s1); padding: 40px 30px; position: relative; overflow: hidden; transition: background 0.3s; cursor: default; }
-        .hp-step:hover { background: var(--s2); }
-        .hp-step::after { content: ''; position: absolute; bottom: 0; left: 0; height: 3px; width: 0; background: linear-gradient(90deg, var(--a), var(--g)); transition: width 0.6s cubic-bezier(0.23,1,0.32,1); }
-        .hp-step:hover::after { width: 100%; }
-        .hp-step-num { font-family: var(--fh); font-size: 60px; font-weight: 900; color: rgba(37,99,235,0.14); line-height: 1; margin-bottom: 20px; }
-        .hp-step h4 { font-family: var(--fh); font-size: 17px; font-weight: 700; color: var(--t); margin-bottom: 9px; }
-        .hp-step p { font-size: 13px; color: var(--m); line-height: 1.65; }
-
-        /* ── TESTIMONIALS ── */
-        .hp-tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-        .hp-tcard {
-          background: var(--s1); border: 1px solid var(--b1); border-radius: 20px; padding: 28px;
-          transition: all 0.35s cubic-bezier(0.23,1,0.32,1); cursor: default; position: relative; overflow: hidden;
-          box-shadow: 0 4px 20px rgba(15,52,96,0.04);
-        }
-        .hp-tcard::before { content: '"'; position: absolute; top: -15px; right: 18px; font-size: 120px; color: rgba(37,99,235,0.06); font-family: Georgia, serif; line-height: 1; pointer-events: none; }
-        .hp-tcard:hover { transform: translateY(-8px); border-color: var(--b2); box-shadow: 0 24px 60px rgba(15,52,96,0.12); }
-        .hp-tstars { color: #D97706; font-size: 14px; letter-spacing: 2px; margin-bottom: 14px; }
-        .hp-ttext { font-size: 14px; color: rgba(15,38,71,0.68); line-height: 1.7; font-style: italic; margin-bottom: 22px; }
-        .hp-tfoot { display: flex; align-items: center; gap: 12px; }
-        .hp-tav { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
-        .hp-tname { font-size: 14px; font-weight: 700; color: var(--t); }
-        .hp-trole { font-size: 11px; color: var(--m); margin-top: 1px; }
-
-        /* ── INTEGRATIONS ── */
-        .hp-ints { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 40px; }
-        .hp-int { background: var(--s1); border: 1px solid var(--b1); border-radius: 12px; padding: 13px 22px; font-size: 13px; color: var(--m); font-weight: 500; display: flex; align-items: center; gap: 9px; transition: all 0.3s cubic-bezier(0.23,1,0.32,1); cursor: default; }
-        .hp-int:hover { background: var(--s2); color: var(--t); border-color: var(--b2); transform: translateY(-3px); box-shadow: 0 10px 26px rgba(15,52,96,0.08); }
-
-        /* ── CTA FINAL ── */
-        .hp-cta {
-          position: relative; z-index: 5; margin: 0 64px 90px;
-          border-radius: 28px; padding: 100px 64px; text-align: center; overflow: hidden;
-          border: 1px solid rgba(37,99,235,0.16);
-          background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(37,99,235,0.12), transparent 70%),
-                      radial-gradient(ellipse 60% 40% at 50% 0%, rgba(13,148,136,0.07), transparent 60%),
-                      #FFFFFF;
-          box-shadow: 0 30px 80px rgba(15,52,96,0.1);
-        }
-        .hp-cta-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px); background-size: 44px 44px; mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black, transparent); pointer-events: none; }
-        .hp-cta h2 { font-family: var(--fh); font-size: clamp(30px, 5vw, 58px); font-weight: 900; color: var(--t); margin-bottom: 16px; position: relative; letter-spacing: -0.03em; line-height: 1.08; }
-        .hp-cta p { font-size: 17px; color: var(--m); margin-bottom: 44px; position: relative; }
-        .hp-cta-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; position: relative; }
-
-        /* ── MODAL ── */
-        .hp-modal { position: fixed; inset: 0; background: rgba(15,23,42,0.85); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 20px; animation: mIn 0.25s ease; }
-        @keyframes mIn { from{opacity:0} to{opacity:1} }
-        .hp-modal-box { width: 100%; max-width: 880px; border-radius: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); position: relative; background: #000; animation: mScale 0.35s cubic-bezier(0.23,1,0.32,1); }
-        @keyframes mScale { from{transform:scale(0.88);opacity:0} to{transform:scale(1);opacity:1} }
-        .hp-close { position: absolute; top: 12px; right: 12px; z-index: 5; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: #fff; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .hp-close:hover { background: rgba(225,29,72,0.5); }
-        .hp-yt { width: 100%; aspect-ratio: 16/9; border: none; display: block; }
-
-        /* ── FOOTER ── */
-        footer { position: relative; z-index: 5; border-top: 1px solid var(--b1); padding: 30px 64px; display: flex; align-items: center; justify-content: space-between; background: var(--s1); }
-        .fp-links { display: flex; gap: 22px; }
-        .fp-links a { font-size: 12px; color: var(--m); text-decoration: none; transition: color 0.2s; font-weight: 500; }
-        .fp-links a:hover { color: var(--a); }
-        footer span { font-size: 12px; color: rgba(15,38,71,0.32); }
-
-        /* ── FADE IN ── */
-        .fi { opacity: 0; transform: translateY(28px); animation: fiIn 0.8s cubic-bezier(0.23,1,0.32,1) forwards; }
-        @keyframes fiIn { to{opacity:1;transform:translateY(0)} }
-        .fi-1{animation-delay:0.08s} .fi-2{animation-delay:0.18s} .fi-3{animation-delay:0.28s} .fi-4{animation-delay:0.38s} .fi-5{animation-delay:0.48s}
-
-        @media(max-width:920px){
-          .hp-nav{padding:0 20px} .hp-nav-center{display:none}
-          .hp-hero{padding:60px 20px 40px; min-height:auto; padding-top:80px}
-          .hp-hero-inner{grid-template-columns:1fr;gap:40px}
-          .hp-hero-r{display:none}
-          .hp-sec{padding:60px 20px} .hp-fpanel{grid-template-columns:1fr;gap:28px;padding:28px}
-          .hp-steps{grid-template-columns:1fr 1fr} .hp-tgrid{grid-template-columns:1fr}
-          .hp-stats{grid-template-columns:1fr 1fr;margin:40px 20px 0}
-          .hp-cta{margin:0 16px 60px;padding:50px 20px}
-          footer{padding:24px;flex-direction:column;gap:12px;text-align:center}
-          .hp-demo{padding:0 20px 60px}
-          .hp-cursor,.hp-cursor-dot{display:none} .hp{cursor:auto}
-          .hp-nav-r .hp-icon-btn:nth-of-type(1){display:none}
-        }
-      `}</style>
-
-      <div className="hp">
-        {/* Custom cursor */}
-        <div className="hp-cursor" ref={cursorRef} />
-        <div className="hp-cursor-dot" ref={cursorDotRef} />
-
-        {/* BG */}
-        <div className="hp-bg">
-          <div className="hp-orb hp-orb-1" />
-          <div className="hp-orb hp-orb-2" />
-          <div className="hp-orb hp-orb-3" />
-        </div>
-        <div className="hp-grid" />
-        <Particles />
-
-        {/* VIDEO MODAL */}
-        {videoOpen && (
-          <div className="hp-modal" onClick={() => setVideoOpen(false)}>
-            <div className="hp-modal-box" onClick={e => e.stopPropagation()}>
-              <button className="hp-close" onClick={() => setVideoOpen(false)}>✕</button>
-              <iframe className="hp-yt" src="https://www.youtube.com/embed/8o7-BL-a998?autoplay=1&rel=0" title="Demo" allow="autoplay; fullscreen" allowFullScreen />
+      {/* ── Top Navigation Bar ── */}
+      <header className="sticky top-0 z-50 w-full px-6 sm:px-12 lg:px-16 py-4 bg-[#000B18]/85 backdrop-blur-md border-b border-[#18D5FD]/15 transition-all">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          {/* Brand Logo */}
+          <a href="#home" className="flex items-center gap-3.5 cursor-pointer group select-none" aria-label="ClassMeet Home">
+            <div className="w-10 h-10 flex items-center justify-center">
+              <svg viewBox="0 0 36 36" fill="none" className="w-9 h-9 transform group-hover:scale-105 transition-transform" aria-hidden="true">
+                <path d="M18 4L34 11.5L18 19L2 11.5L18 4Z" fill="#38BDF8" stroke="#18D5FD" strokeWidth="1.5" />
+                <path d="M6.5 13.5V20.5C6.5 20.5 5 21.5 5 23" stroke="#18D5FD" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="5" cy="23.5" r="1.6" fill="#18D5FD" />
+                <path d="M8 16.5L18 21.5L28 16.5V20.5L18 25.5L8 20.5V16.5Z" fill="#0284C7" />
+              </svg>
             </div>
-          </div>
-        )}
-
-        {/* NAV — light theme, matches reference screenshot */}
-        <nav className={`hp-nav ${navScrolled ? 'sc' : ''}`}>
-          <a href="/" className="hp-logo">
-            <img src={logo} alt="ClassMeet" style={{height:'36px',width:'auto'}} />
-            <span className="hp-logo-name">ClassMeet</span>
+            <span className="text-2xl font-bold tracking-tight text-white flex items-center">
+              Class<span className="text-[#18D5FD]">Meet</span>
+            </span>
           </a>
 
-          <div className="hp-nav-center">
-            <div className="hp-nav-links">
-              <a href="/">Home</a>
-              <a href="#features">Features
-                <svg width="11" height="7" viewBox="0 0 11 7" fill="none"><path d="M1 1L5.5 5.5L10 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </a>
-              <a href="#about">About</a>
-              <a href="#how">How it works</a>
-            </div>
-          </div>
+          {/* Desktop Navigation Links */}
+          <nav className="hidden md:flex items-center gap-8 lg:gap-10" aria-label="Main Navigation">
+            <a href="#home" className={`nav-item text-sm lg:text-[0.9375rem] ${activeNav === 'home' ? 'active font-semibold text-white' : 'font-medium text-slate-300 hover:text-white'}`}>Home</a>
+            <a href="#why-classmeet" className={`nav-item text-sm lg:text-[0.9375rem] ${activeNav === 'why-classmeet' ? 'active font-semibold text-white' : 'font-medium text-slate-300 hover:text-white'}`}>Why ClassMeet</a>
+            <a href="#features" className={`nav-item text-sm lg:text-[0.9375rem] ${activeNav === 'features' ? 'active font-semibold text-white' : 'font-medium text-slate-300 hover:text-white'}`}>Features</a>
+            <a href="#how-it-works" className={`nav-item text-sm lg:text-[0.9375rem] ${activeNav === 'how-it-works' ? 'active font-semibold text-white' : 'font-medium text-slate-300 hover:text-white'}`}>How It Works</a>
+            <a href="#about-us" className={`nav-item text-sm lg:text-[0.9375rem] ${activeNav === 'about-us' ? 'active font-semibold text-white' : 'font-medium text-slate-300 hover:text-white'}`}>About Us</a>
+            <a href="#contact" className={`nav-item text-sm lg:text-[0.9375rem] ${activeNav === 'contact' ? 'active font-semibold text-white' : 'font-medium text-slate-300 hover:text-white'}`}>Contact</a>
+          </nav>
 
-          <div className="hp-nav-r">
-            <button className="hp-icon-btn" aria-label="Search">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/><path d="M21 21L17 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+          {/* Right Action Buttons */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button
+              onClick={() => onLogin ? onLogin() : navigate('/login')}
+              className="text-sm font-semibold text-slate-300 hover:text-[#18D5FD] transition-colors hidden sm:block px-2"
+            >
+              Sign In
             </button>
-            <a href="#contact" className="hp-nav-textlink">
-              Contact
-              <svg width="11" height="7" viewBox="0 0 11 7" fill="none"><path d="M1 1L5.5 5.5L10 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </a>
-            <button className="hp-nav-textlink" onClick={onLogin}>Sign In</button>
-            <a href="#support" className="hp-nav-textlink">Support</a>
-            <MagBtn className="btn-solid-sm" onClick={onGetStarted}>Sign Up Free</MagBtn>
-          </div>
-        </nav>
+            <button
+              onClick={() => setJoinClassModalOpen(true)}
+              className="btn-outline hidden sm:inline-flex items-center justify-center px-5 py-2 rounded-full text-white font-medium text-sm"
+            >
+              Join Class
+            </button>
+            <button
+              onClick={() => onGetStarted ? onGetStarted() : navigate('/register')}
+              className="btn-cyan inline-flex items-center justify-center px-6 py-2 rounded-full text-[#001324] font-bold text-sm"
+            >
+              Sign Up
+            </button>
 
-        {/* HERO */}
-        <section className="hp-hero">
-          <div className="hp-hero-inner">
-            <div className="hp-hero-left">
-              <div className="hp-pill fi fi-1"><span className="hp-pill-dot" />AI-Powered Live Classroom Platform</div>
-              <h1 className="fi fi-2">Teach Online.<br />Smarter with</h1>
-              <div className="hp-hero-typed fi fi-2">
-                {typedText}<span className="hp-cursor-blink" />
+            {/* Mobile Menu Toggle */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-1.5 text-white hover:text-[#18D5FD] focus:outline-none"
+              aria-label="Toggle Mobile Menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu Drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden mt-3 max-w-7xl mx-auto rounded-2xl p-6 border border-[#18D5FD]/30 bg-[#031526]/95 backdrop-blur-md shadow-2xl transition-all">
+            <nav className="flex flex-col gap-4 text-center">
+              <a href="#home" onClick={() => setMobileMenuOpen(false)} className="text-[#18D5FD] text-base font-semibold py-1">Home</a>
+              <a href="#why-classmeet" onClick={() => setMobileMenuOpen(false)} className="text-white hover:text-[#18D5FD] text-base font-semibold py-1">Why ClassMeet</a>
+              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-white hover:text-[#18D5FD] text-base font-semibold py-1">Features</a>
+              <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="text-white hover:text-[#18D5FD] text-base font-semibold py-1">How It Works</a>
+              <a href="#about-us" onClick={() => setMobileMenuOpen(false)} className="text-white hover:text-[#18D5FD] text-base font-semibold py-1">About Us</a>
+              <a href="#contact" onClick={() => setMobileMenuOpen(false)} className="text-white hover:text-[#18D5FD] text-base font-semibold py-1">Contact</a>
+              <div className="pt-4 border-t border-[#18D5FD]/20 flex flex-col gap-3">
+                <button
+                  onClick={() => { setMobileMenuOpen(false); setJoinClassModalOpen(true); }}
+                  className="btn-outline w-full py-2.5 rounded-full text-white font-medium text-sm"
+                >
+                  Join Class
+                </button>
+                <button
+                  onClick={() => { setMobileMenuOpen(false); onGetStarted ? onGetStarted() : navigate('/register'); }}
+                  className="btn-cyan w-full py-2.5 rounded-full text-[#001324] font-bold text-sm"
+                >
+                  Sign Up
+                </button>
+                <button
+                  onClick={() => { setMobileMenuOpen(false); onLogin ? onLogin() : navigate('/login'); }}
+                  className="text-slate-300 hover:text-white text-sm font-medium py-1"
+                >
+                  Already have an account? Sign In
+                </button>
               </div>
-              <p className="hp-sub fi fi-3">
-                HD live classes, AI face-detection attendance, smart whiteboard, anti-cheat quizzes,
-                private viva rooms, breakout rooms, PDF sharing — everything in one seamless platform.
+            </nav>
+          </div>
+        )}
+      </header>
+
+      {/* ── Main Content Container ── */}
+      <main className="relative z-10">
+        {/* HERO SECTION */}
+        <section id="home" className="min-h-[calc(100vh-76px)] lg:h-[calc(100vh-76px)] flex items-center justify-center px-6 sm:px-10 lg:px-12 py-6 lg:py-0 overflow-hidden relative">
+          <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Left Column: Headline & CTAs */}
+            <div className="lg:col-span-7 xl:col-span-6 flex flex-col items-start text-left z-20">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-[2.75rem] xl:text-[3.4rem] 2xl:text-[3.75rem] font-extrabold text-white tracking-tight leading-[1.15]">
+                <span className="block whitespace-nowrap">The Smarter Way to</span>
+                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-[#18D5FD] via-[#38BDF8] to-[#22D3EE] drop-shadow-[0_0_25px_rgba(24,213,253,0.3)] whitespace-nowrap">
+                  Learn, Teach &amp; Connect.
+                </span>
+              </h1>
+
+              <p className="mt-6 sm:mt-7 text-base sm:text-lg lg:text-xl text-slate-300/90 max-w-2xl leading-relaxed tracking-normal font-normal">
+                An AI-Powered Smart Live Classroom for Automated Attendance, Secure Proctoring and Pedagogical Collaboration.
               </p>
-              <div className="hp-ctas fi fi-4">
-                <MagBtn className="btn-hero-primary" onClick={onGetStarted}>▶ Start Teaching Free</MagBtn>
-                <MagBtn className="btn-hero-ghost" onClick={() => setVideoOpen(true)}>▷ Watch Demo</MagBtn>
-              </div>
-              <div className="hp-trust fi fi-5">
-                <div className="hp-avs">
-                  {[['AR','#2563EB'],['PS','#0D9488'],['MH','#7C3AED'],['JK','#D97706'],['FK','#E11D48']].map(([i,c],k)=>(
-                    <div key={k} className="hp-av" style={{background:`${c}1A`,color:c}}>{i}</div>
-                  ))}
-                </div>
-                <div className="hp-trust-t"><strong>12,400+ students</strong><br/>learning live every day</div>
+
+              <div className="mt-8 sm:mt-10 flex flex-wrap items-center gap-4 sm:gap-5">
+                <button
+                  onClick={() => onGetStarted ? onGetStarted() : navigate('/register')}
+                  className="btn-cyan px-8 sm:px-9 py-3.5 sm:py-4 rounded-full text-[#001324] font-bold text-base sm:text-lg flex items-center gap-2.5 shadow-[0_0_25px_rgba(24,213,253,0.35)] hover:shadow-[0_0_35px_rgba(24,213,253,0.55)] transition-all"
+                >
+                  <span>Get Started Free</span>
+                  <span className="text-lg font-bold">&rarr;</span>
+                </button>
+                <button
+                  onClick={() => setDemoModalOpen(true)}
+                  className="btn-outline px-7 sm:px-8 py-3.5 sm:py-4 rounded-full text-white font-medium text-base sm:text-lg flex items-center gap-2.5"
+                >
+                  <svg className="w-3.5 h-3.5 fill-white" viewBox="0 0 24 24">
+                    <polygon points="6 4 20 12 6 20 6 4" />
+                  </svg>
+                  <span>Watch Demo</span>
+                </button>
               </div>
             </div>
 
-            {/* HERO MOCKUP */}
-            <div className="hp-hero-r fi fi-3">
-              <div className="hp-mockup">
-                <div className="hp-mk-bar">
-                  <div className="hp-mk-dots">
-                    <div className="hp-mk-dot" style={{background:'#FF5F57'}}/>
-                    <div className="hp-mk-dot" style={{background:'#FEBC2E'}}/>
-                    <div className="hp-mk-dot" style={{background:'#28C840'}}/>
+            {/* Right Column: 3D Laptop Asset */}
+            <div className="lg:col-span-5 xl:col-span-6 flex items-center justify-center lg:justify-end relative">
+              <div className="relative w-full max-w-[760px] xl:max-w-[850px] 2xl:max-w-[920px] flex items-center justify-center lg:scale-105 xl:scale-110 origin-center lg:origin-right transition-transform duration-300">
+                <img
+                  src="/laptop_final_perfect.png"
+                  alt="ClassMeet AI Smart Classroom on Laptop"
+                  className="laptop-asset w-full h-auto object-contain"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── WHY CLASSMEET: 3D CYLINDRICAL CAROUSEL SECTION ── */}
+        <section id="why-classmeet" className="py-24 sm:py-28 px-4 sm:px-8 lg:px-12 border-t border-[#18D5FD]/20 bg-[#000B18]/65 backdrop-blur-sm relative overflow-hidden select-none">
+          <div className="why-carousel-glow" aria-hidden="true" />
+
+          <div className="max-w-7xl mx-auto relative z-10">
+            {/* Header */}
+            <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
+              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold uppercase tracking-widest text-[#19D5F5] bg-[#061D35]/85 border border-[#19D5F5]/40 shadow-[0_0_15px_rgba(25,213,245,0.22)] mb-4">
+                <span className="w-2 h-2 rounded-full bg-[#19D5F5] animate-pulse" />
+                DISCOVER CLASSMEET
+              </span>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight">
+                Why <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#19D5F5] via-[#38BDF8] to-[#0284C7]">ClassMeet</span>?
+              </h2>
+              <p className="mt-4 text-slate-300/90 text-base sm:text-lg lg:text-xl font-normal leading-relaxed">
+                &ldquo;Discover the purpose, innovation, and vision behind a smarter virtual learning experience.&rdquo;
+              </p>
+            </div>
+
+            {/* 2-Column Showcase */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 xl:gap-12 items-center">
+              {/* Left Column: 3D Cylinder Stage */}
+              <div className="lg:col-span-5 xl:col-span-5 w-full flex flex-col items-center">
+                <div
+                  ref={stageRef}
+                  className="why-carousel-stage"
+                  role="region"
+                  aria-label="Why ClassMeet 3D Carousel"
+                  onMouseEnter={() => { isHoveredRef.current = true; }}
+                  onMouseLeave={() => { isHoveredRef.current = false; }}
+                  onMouseDown={(e) => {
+                    if (e.button === 0 && !e.target.closest('.card-explore-btn')) {
+                      onPointerDown(e.clientX);
+                    }
+                  }}
+                  onMouseMove={(e) => onPointerMove(e.clientX)}
+                  onMouseUp={onPointerUp}
+                  onTouchStart={(e) => {
+                    if (e.touches.length === 1) onPointerDown(e.touches[0].clientX);
+                  }}
+                  onTouchMove={(e) => {
+                    if (e.touches.length === 1) onPointerMove(e.touches[0].clientX);
+                  }}
+                  onTouchEnd={onPointerUp}
+                  tabIndex="0"
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowLeft') handlePrevCard();
+                    if (e.key === 'ArrowRight') handleNextCard();
+                  }}
+                >
+                  <div
+                    ref={cylinderRef}
+                    className="why-carousel-cylinder"
+                    style={{ transform: `rotateY(${targetCylinderAngle}deg)` }}
+                  >
+                    {WHY_TOPICS.map((topic, i) => {
+                      const baseAngle = i * angleStep;
+                      const diff = (i - currentNormalized + totalCards) % totalCards;
+                      let cardClass = 'why-carousel-card ';
+                      if (diff === 0) cardClass += 'active-center';
+                      else if (diff === 1 || diff === 6) cardClass += 'flanking-card';
+                      else cardClass += 'back-card';
+
+                      return (
+                        <article
+                          key={topic.slug}
+                          className={cardClass}
+                          style={{
+                            transform: `rotateY(${baseAngle}deg) translateZ(${radius}px)`
+                          }}
+                          onClick={(e) => {
+                            if (!e.target.closest('.card-explore-btn') && diff !== 0) {
+                              let shortestDiff = diff;
+                              if (shortestDiff > 3) shortestDiff -= 7;
+                              rotateTo(virtualIndex + shortestDiff);
+                            }
+                          }}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="card-pill">{topic.pill}</span>
+                              <div className="card-icon-box shrink-0" aria-hidden="true">
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                </svg>
+                              </div>
+                            </div>
+                            <h3 className="text-[0.8125rem] sm:text-[0.875rem] font-bold text-white tracking-tight leading-tight mb-1">
+                              {topic.titleHtml ? topic.titleHtml.replace(/<[^>]+>/g, '') : topic.slug}
+                            </h3>
+
+                            {topic.image ? (
+                              <div className="card-image-box mb-1">
+                                <img src={topic.image} alt={topic.pill} loading="lazy" />
+                              </div>
+                            ) : (
+                              <div className="card-image-box mb-1 flex items-center justify-center bg-gradient-to-br from-[#062444] to-[#021020] border border-[#19D5F5]/35 p-2">
+                                <span className="text-[0.54rem] font-bold tracking-wider text-[#19D5F5] uppercase text-center">
+                                  {topic.badge}
+                                </span>
+                              </div>
+                            )}
+
+                            <p className="text-[0.65rem] text-[#B8CBDC] leading-snug line-clamp-2">
+                              {topic.subtitle}
+                            </p>
+                          </div>
+
+                          <div className="pt-1 border-t border-[#19D5F5]/20">
+                            <button
+                              type="button"
+                              onClick={(e) => handleExploreClick(i, e)}
+                              className="card-explore-btn"
+                            >
+                              <span>Explore More</span>
+                              <span className="text-[#19D5F5] font-bold text-xs">&rarr;</span>
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
-                  <div className="hp-mk-title">ClassMeet · Data Structures · CS301</div>
                 </div>
-                <div className="hp-mk-body">
-                  <div className="hp-mk-video">
-                    <div className="hp-mk-main-cam">
-                      <img src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=400&q=80&fit=crop" alt="Teacher" />
-                      <div className="hp-mk-cam-overlay" />
-                      <div className="hp-mk-cam-name">Dr. Rahman 👩‍🏫</div>
-                      <div className="hp-mk-live"><div className="hp-mk-livedot"/>LIVE</div>
+
+                {/* Carousel Controls */}
+                <div className="flex items-center justify-center gap-5 mt-7 z-20">
+                  <button
+                    onClick={handlePrevCard}
+                    className="carousel-nav-btn"
+                    aria-label="Rotate Previous Card"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    {WHY_TOPICS.map((_, dotIdx) => (
+                      <button
+                        key={dotIdx}
+                        onClick={() => {
+                          let diff = (dotIdx - currentNormalized + totalCards) % totalCards;
+                          if (diff > 3) diff -= 7;
+                          rotateTo(virtualIndex + diff);
+                        }}
+                        className={`carousel-dot ${dotIdx === currentNormalized ? 'active' : ''}`}
+                        aria-label={`Go to Card ${dotIdx + 1}`}
+                      />
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={handleNextCard}
+                    className="carousel-nav-btn"
+                    aria-label="Rotate Next Card"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mt-3 text-[0.72rem] text-slate-400/80 flex items-center justify-center gap-1.5 text-center">
+                  <svg className="w-3.5 h-3.5 text-[#19D5F5]/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                  <span>Click Explore More or drag cards to inspect</span>
+                </div>
+              </div>
+
+              {/* Right Column: Interactive Details Panel */}
+              <div className="lg:col-span-7 xl:col-span-7 w-full">
+                <div
+                  ref={detailsPanelRef}
+                  className={`why-details-card ${pulseDetails ? 'highlight-pulse' : ''}`}
+                >
+                  {/* Top Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 pb-3.5 border-b border-[#19D5F5]/20 mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="card-pill">Card 0{activeTopicIndex + 1} of 07</span>
+                      <span className="inline-flex items-center gap-1.5 text-[0.625rem] font-bold text-[#19D5F5] uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#19D5F5] animate-ping" />
+                        Active Topic Focus
+                      </span>
                     </div>
-                    <div className="hp-mk-cams">
-                      {[
-                        ['https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=120&q=70&fit=crop','Arif R.'],
-                        ['https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=120&q=70&fit=crop','Priya S.'],
-                        ['https://images.unsplash.com/photo-1531482615713-2afd69097998?w=120&q=70&fit=crop','Mehedi H.'],
-                      ].map(([src,name],i)=>(
-                        <div className="hp-mk-cam-sm" key={i}>
-                          <img src={src} alt={name} />
-                          <div className="hp-mk-cam-sm-name">{name}</div>
-                          <div className="hp-mk-ai-badge">✓</div>
-                        </div>
+
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {WHY_TOPICS.map((t, idx) => (
+                        <button
+                          key={t.slug}
+                          onClick={() => handleTopicTabClick(idx)}
+                          className={`why-topic-pill ${idx === activeTopicIndex ? 'active' : ''}`}
+                        >
+                          {`0${idx + 1}. ${t.pill.split(' ')[0]}`}
+                        </button>
                       ))}
                     </div>
                   </div>
-                  <div className="hp-mk-sidebar">
-                    <div className="hp-mk-sb-head">💬 Live Chat</div>
-                    <div className="hp-mk-msgs">
-                      {[
-                        {av:'AR',c:'#2563EB',n:'Arif',t:'Can you slow down a bit?'},
-                        {av:'PS',c:'#0D9488',n:'Priya',t:'✋ Question please!'},
-                        {av:'DR',c:'#7C3AED',n:'Dr. Rahman',t:'Sure, Priya go ahead 👍'},
-                      ].map((m,i)=>(
-                        <div className="hp-mk-msg" key={i}>
-                          <div className="hp-mk-msg-av" style={{background:`${m.c}1A`,color:m.c}}>{m.av}</div>
-                          <div className="hp-mk-msg-body"><div className="hp-mk-msg-name">{m.n}</div>{m.t}</div>
-                        </div>
-                      ))}
+
+                  {/* Header & Visual Media */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4 items-center">
+                    <div className="md:col-span-7">
+                      <span className="text-[0.68rem] font-bold text-[#19D5F5] uppercase tracking-widest block mb-1">
+                        {currentTopic.pill}
+                      </span>
+                      <h3
+                        className="text-xl sm:text-2xl font-extrabold text-white tracking-tight leading-snug mb-1.5"
+                        dangerouslySetInnerHTML={{ __html: currentTopic.titleHtml }}
+                      />
+                      <p className="text-xs sm:text-[0.8125rem] font-medium text-[#38BDF8] leading-relaxed mb-2">
+                        {currentTopic.subtitle}
+                      </p>
+                      <p className="text-xs text-slate-300 leading-relaxed font-normal">
+                        {currentTopic.desc}
+                      </p>
                     </div>
-                    <div className="hp-mk-ai-row">
-                      <div className="hp-mk-ai-text">✓ AI: 3 students marked present</div>
+
+                    <div className="md:col-span-5">
+                      {currentTopic.image ? (
+                        <div className="rounded-xl overflow-hidden border border-[#19D5F5]/35 bg-[#021224] shadow-[0_0_20px_rgba(25,213,245,0.18)] max-h-[160px] flex items-center justify-center p-1.5">
+                          <img
+                            src={currentTopic.image}
+                            alt={currentTopic.pill}
+                            className="w-full h-auto max-h-[150px] object-cover rounded-lg"
+                          />
+                        </div>
+                      ) : (
+                        <div className="rounded-xl overflow-hidden border border-[#19D5F5]/35 bg-gradient-to-br from-[#062444] to-[#021020] shadow-[0_0_20px_rgba(25,213,245,0.15)] h-[140px] flex flex-col items-center justify-center p-3 text-center">
+                          <div className="w-10 h-10 rounded-xl bg-[#19D5F5]/20 border border-[#19D5F5]/50 flex items-center justify-center text-[#19D5F5] mb-2 shadow-[0_0_12px_rgba(25,213,245,0.3)]">
+                            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                          </div>
+                          <span className="text-[0.625rem] font-bold text-[#19D5F5] uppercase tracking-wider">
+                            {currentTopic.badge}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {/* 4 Highlights Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
+                    {currentTopic.features.map((f, i) => (
+                      <div key={i} className="why-detail-feature">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#19D5F5]" />
+                          <h4 className="text-xs font-bold text-white tracking-tight">{f.title}</h4>
+                        </div>
+                        <p className="text-[0.68rem] text-slate-300 leading-snug">{f.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer Action */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3.5 border-t border-[#19D5F5]/20">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setJoinClassModalOpen(true)}
+                        className="btn-cyan text-xs font-bold py-1.5 px-4 rounded-full shadow-[0_0_12px_rgba(25,213,245,0.4)]"
+                      >
+                        Experience ClassMeet
+                      </button>
+                      <button
+                        onClick={handleNextTopic}
+                        className="text-xs font-semibold text-[#19D5F5] hover:text-white transition-colors flex items-center gap-1"
+                      >
+                        <span>Next Topic</span>
+                        <span>&rarr;</span>
+                      </button>
+                    </div>
+                    <a
+                      href={`/why-classmeet/${currentTopic.slug}.html`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-semibold text-slate-300 hover:text-[#19D5F5] transition-colors flex items-center gap-1"
+                    >
+                      <span>Dedicated Full Page</span>
+                      <span>&nearr;</span>
+                    </a>
+                  </div>
                 </div>
-                <div className="hp-mk-toolbar">
-                  {[['🎙️','on'],['📷','on'],['🖥️','on'],['✋',''],['📄',''],['🖊️',''],['⏺️',''],['📞','red']].map(([ic,cls],i)=>(
-                    <div key={i} className={`hp-mk-tool ${cls}`}>{ic}</div>
-                  ))}
-                </div>
-              </div>
-              {/* Floating badges */}
-              <div className="hp-float hp-f1">
-                <div className="hp-float-num">840+</div>
-                <div className="hp-float-lbl">Active Educators</div>
-              </div>
-              <div className="hp-float hp-f2">
-                <div className="hp-float-chip" style={{color:'#0D9488'}}>✓ AI Attendance On</div>
-                <div className="hp-float-lbl" style={{marginTop:4}}>24 students marked present</div>
-              </div>
-              <div className="hp-float hp-f3">
-                <div className="hp-float-chip" style={{color:'#7C3AED'}}>⚡ Live Quiz Active</div>
-                <div className="hp-float-lbl" style={{marginTop:4}}>18/24 submitted</div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* TICKER */}
-        <div className="hp-ticker">
-          <div className="hp-ticker-track">
-            {[...Array(2)].flatMap((_, r) =>
-              ['AI Attendance','Smart Whiteboard','Live Quiz','Anti-Cheat','Screen Share','PDF Viewer','Breakout Rooms','Private Viva Room','Excel Reports','Auto Recording','Face Detection','Real-time Chat'].map((item,i)=>(
-                <div className="hp-tick" key={`${r}-${i}`}>
-                  <div className="hp-tick-sep"/>
-                  <span>{item}</span>
+        {/* ── CORE FEATURES SECTION ── */}
+        <section id="features" className="py-24 px-6 sm:px-12 lg:px-16 border-t border-[#18D5FD]/20 bg-[#000B18]/70 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <span className="text-[#18D5FD] text-xs sm:text-sm font-bold tracking-widest uppercase mb-2 block">
+                Pedagogy First Architecture
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                Four Pillars of Academic Immersion
+              </h2>
+              <p className="mt-3 text-slate-400 text-base sm:text-lg">
+                Engineered with strict on-device machine learning, zero cloud biometric storage, and sub-50ms peer mesh streaming.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
+              {/* Feature 1 */}
+              <div className="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-lg hover:border-[#18D5FD]/70 hover:shadow-[0_0_25px_rgba(24,213,253,0.2)] transition-all">
+                <div className="w-12 h-12 rounded-xl bg-[#18D5FD]/20 border border-[#18D5FD]/50 flex items-center justify-center text-[#18D5FD] mb-5">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
                 </div>
-              ))
-            )}
+                <h3 className="text-xl font-bold text-white mb-3">AI Eye-Blink Attendance</h3>
+                <p className="text-slate-300 leading-relaxed text-sm sm:text-base">
+                  On-device FaceMesh calculates physiological Eye Aspect Ratio (EAR) curves to authenticate living student attendance without photo spoofing or cloud video leakage.
+                </p>
+                <div className="mt-5 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#18D5FD]/15 text-[#18D5FD] border border-[#18D5FD]/35">
+                  <span>🔒 100% Client-Side WebGL</span>
+                </div>
+              </div>
+
+              {/* Feature 2 */}
+              <div className="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-lg hover:border-[#18D5FD]/70 hover:shadow-[0_0_25px_rgba(24,213,253,0.2)] transition-all">
+                <div className="w-12 h-12 rounded-xl bg-[#18D5FD]/20 border border-[#18D5FD]/50 flex items-center justify-center text-[#18D5FD] mb-5">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Dynamic 3-Strike Proctoring</h3>
+                <p className="text-slate-300 leading-relaxed text-sm sm:text-base">
+                  Respectful and progressive tab-switching and gaze-away warnings. Fosters genuine classroom focus without invasive or punitive spyware installations.
+                </p>
+                <div className="mt-5 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#18D5FD]/15 text-[#18D5FD] border border-[#18D5FD]/35">
+                  <span>🛡️ Transparent Integrity</span>
+                </div>
+              </div>
+
+              {/* Feature 3 */}
+              <div className="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-lg hover:border-[#18D5FD]/70 hover:shadow-[0_0_25px_rgba(24,213,253,0.2)] transition-all">
+                <div className="w-12 h-12 rounded-xl bg-[#18D5FD]/20 border border-[#18D5FD]/50 flex items-center justify-center text-[#18D5FD] mb-5">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Real-Time Excalidraw Sync</h3>
+                <p className="text-slate-300 leading-relaxed text-sm sm:text-base">
+                  Infinite collaborative hand-drawn whiteboards synced at 60 FPS over WebSocket delta packets. Teachers and students co-sketch diagrams and equations synchronously.
+                </p>
+                <div className="mt-5 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#18D5FD]/15 text-[#18D5FD] border border-[#18D5FD]/35">
+                  <span>⚡ Sub-20ms Socket Deltas</span>
+                </div>
+              </div>
+
+              {/* Feature 4 */}
+              <div className="p-8 rounded-2xl bg-[#031526]/85 border border-[#18D5FD]/30 shadow-lg hover:border-[#18D5FD]/70 hover:shadow-[0_0_25px_rgba(24,213,253,0.2)] transition-all">
+                <div className="w-12 h-12 rounded-xl bg-[#18D5FD]/20 border border-[#18D5FD]/50 flex items-center justify-center text-[#18D5FD] mb-5">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">Synchronized Slide Annotations</h3>
+                <p className="text-slate-300 leading-relaxed text-sm sm:text-base">
+                  Broadcast slide decks with synchronized laser pointer trails, student doubt pins, and lockstep slide presentation that keeps all remote learners on the same page.
+                </p>
+                <div className="mt-5 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#18D5FD]/15 text-[#18D5FD] border border-[#18D5FD]/35">
+                  <span>📑 Vector Laser Trails</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── HOW IT WORKS SECTION ── */}
+        <section id="how-it-works" className="py-24 px-6 sm:px-12 lg:px-16 border-t border-[#18D5FD]/20 bg-[#000B18]/70 backdrop-blur-sm">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center max-w-2xl mx-auto mb-16">
+              <span className="text-[#18D5FD] text-xs sm:text-sm font-bold tracking-widest uppercase mb-2 block">
+                Zero-Friction Workflow
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                How ClassMeet Works
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="p-8 rounded-2xl bg-[#031526]/80 border border-[#18D5FD]/30 text-center flex flex-col items-center">
+                <span className="text-3xl font-black text-[#18D5FD] mb-4 font-mono">01</span>
+                <h3 className="text-lg font-bold text-white mb-2">Instant Room Code</h3>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  Launch a live class session in 3 seconds. Students join instantly through a browser URL without downloads or account barriers.
+                </p>
+              </div>
+
+              <div className="p-8 rounded-2xl bg-[#031526]/80 border border-[#18D5FD]/30 text-center flex flex-col items-center">
+                <span className="text-3xl font-black text-[#18D5FD] mb-4 font-mono">02</span>
+                <h3 className="text-lg font-bold text-white mb-2">On-Device Edge ML</h3>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  MediaPipe FaceMesh operates directly in the browser's WebGL context, validating eye blinks while safeguarding student privacy.
+                </p>
+              </div>
+
+              <div className="p-8 rounded-2xl bg-[#031526]/80 border border-[#18D5FD]/30 text-center flex flex-col items-center">
+                <span className="text-3xl font-black text-[#18D5FD] mb-4 font-mono">03</span>
+                <h3 className="text-lg font-bold text-white mb-2">Automated LMS Reports</h3>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  Verified attendance rosters and proctoring audit summaries automatically export directly into Canvas, Moodle, or Blackboard.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── ABOUT US SECTION ── */}
+        <section id="about-us" className="py-24 px-6 sm:px-12 lg:px-16 border-t border-[#18D5FD]/20 bg-[#000B18]/70 backdrop-blur-sm">
+          <div className="max-w-4xl mx-auto text-center">
+            <span className="text-[#18D5FD] text-xs sm:text-sm font-bold tracking-widest uppercase mb-2 block">
+              Our Mission
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-8">
+              Restoring Authenticity to Virtual Education
+            </h2>
+            <p className="text-lg sm:text-xl text-white font-medium leading-relaxed mb-6">
+              Traditional web conferencing tools were architected for corporate sales meetings, not interactive pedagogical environments.
+            </p>
+            <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-3xl mx-auto">
+              ClassMeet was built from the ground up by educators and engineers to combat proxy attendance and passive disengagement. By combining browser-based edge neural networks with high-performance WebRTC mesh routing, we give educators the confidence of a proctored, interactive physical auditorium right inside the browser.
+            </p>
+          </div>
+        </section>
+
+        {/* ── CONTACT SECTION ── */}
+        <section id="contact" className="py-24 px-6 sm:px-12 lg:px-16 border-t border-[#18D5FD]/20 bg-[#000B18]/70 backdrop-blur-sm">
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-12">
+              <span className="text-[#18D5FD] text-xs sm:text-sm font-bold tracking-widest uppercase mb-2 block">
+                Institutional Inquiries
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                Connect with Our Engineering Team
+              </h2>
+              <p className="mt-3 text-base text-slate-300">
+                Inquire about campus-wide LTI 1.3 integrations, dedicated SFU clusters, or pilot evaluations.
+              </p>
+            </div>
+
+            <form onSubmit={handleContactSubmit} className="p-8 sm:p-10 rounded-2xl bg-[#031526]/90 border border-[#18D5FD]/40 shadow-xl flex flex-col gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div>
+                  <label htmlFor="cName" className="block text-xs font-semibold text-white uppercase tracking-wider mb-2">Your Name</label>
+                  <input
+                    type="text"
+                    id="cName"
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    placeholder="Dr. Aris Vance"
+                    required
+                    className="w-full px-4 py-3 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white placeholder-slate-500 focus:outline-none focus:border-[#18D5FD] transition-colors text-sm"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="cEmail" className="block text-xs font-semibold text-white uppercase tracking-wider mb-2">Institutional Email</label>
+                  <input
+                    type="email"
+                    id="cEmail"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    placeholder="vance@university.edu"
+                    required
+                    className="w-full px-4 py-3 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white placeholder-slate-500 focus:outline-none focus:border-[#18D5FD] transition-colors text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="cInstitution" className="block text-xs font-semibold text-white uppercase tracking-wider mb-2">University / Organization</label>
+                <input
+                  type="text"
+                  id="cInstitution"
+                  value={contactInst}
+                  onChange={(e) => setContactInst(e.target.value)}
+                  placeholder="Department of Computer Science"
+                  required
+                  className="w-full px-4 py-3 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white placeholder-slate-500 focus:outline-none focus:border-[#18D5FD] transition-colors text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="cMsg" className="block text-xs font-semibold text-white uppercase tracking-wider mb-2">Cohort Size / Message</label>
+                <textarea
+                  id="cMsg"
+                  rows="3"
+                  value={contactMsg}
+                  onChange={(e) => setContactMsg(e.target.value)}
+                  placeholder="Tell us about your cohort size or specific LMS requirements..."
+                  required
+                  className="w-full px-4 py-3 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white placeholder-slate-500 focus:outline-none focus:border-[#18D5FD] transition-colors text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="btn-cyan mt-2 w-full py-3.5 rounded-full text-[#001324] font-bold text-sm tracking-wide"
+              >
+                Send Institutional Message
+              </button>
+            </form>
+          </div>
+        </section>
+      </main>
+
+      {/* ── FOOTER ── */}
+      <footer className="border-t border-[#18D5FD]/20 py-10 px-6 sm:px-12 bg-[#000812]/90 backdrop-blur-sm relative z-10">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-sm text-slate-400">
+          <div className="flex items-center gap-3">
+            <svg viewBox="0 0 36 36" fill="none" className="w-6 h-6" aria-hidden="true">
+              <path d="M18 4L34 11.5L18 19L2 11.5L18 4Z" fill="#38BDF8" stroke="#18D5FD" strokeWidth="1.5" />
+              <path d="M6.5 13.5V20.5C6.5 20.5 5 21.5 5 23" stroke="#18D5FD" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="5" cy="23.5" r="1.6" fill="#18D5FD" />
+              <path d="M8 16.5L18 21.5L28 16.5V20.5L18 25.5L8 20.5V16.5Z" fill="#0284C7" />
+            </svg>
+            <span className="font-extrabold text-white text-lg">Class<span className="text-[#18D5FD]">Meet</span></span>
+            <span className="ml-2 text-xs text-slate-500">&copy; 2026 ClassMeet Inc.</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <a href="#home" className="hover:text-white transition-colors">Home</a>
+            <a href="#features" className="hover:text-white transition-colors">Features</a>
+            <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
+            <a href="#about-us" className="hover:text-white transition-colors">About Us</a>
+            <a href="#contact" className="hover:text-white transition-colors">Contact</a>
           </div>
         </div>
+      </footer>
 
-        {/* STATS */}
-        <div className="hp-stats" style={{marginLeft:'64px',marginRight:'64px'}}>
-          {[
-            {end:12400,suf:'+',lbl:'Active Students'},
-            {end:840,suf:'+',lbl:'Educators'},
-            {end:98000,suf:'+',lbl:'Classes Held'},
-            {end:99.9,suf:'%',lbl:'Uptime'},
-          ].map((s,i)=>(
-            <div className="hp-stat" key={i}>
-              <div className="hp-stat-glow"/>
-              <div className="hp-stat-line"/>
-              <span className="hp-stat-num"><Counter end={s.end} suffix={s.suf} /></span>
-              <div className="hp-stat-lbl">{s.lbl}</div>
+      {/* ── MODAL: SIGN UP ── */}
+      {signUpModalOpen && (
+        <div
+          className="modal-backdrop open fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#000E1D]/85 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSignUpModalOpen(false);
+          }}
+        >
+          <div className="modal-box w-full max-w-md p-8 rounded-2xl bg-[#031526] border border-[#18D5FD]/50 shadow-2xl text-white">
+            <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#18D5FD]/30">
+              <h3 className="text-xl font-bold text-white">Get Started with ClassMeet</h3>
+              <button
+                type="button"
+                className="modal-close text-2xl text-[#18D5FD] hover:text-white"
+                onClick={() => setSignUpModalOpen(false)}
+              >
+                &times;
+              </button>
             </div>
-          ))}
-        </div>
-
-        {/* FEATURES */}
-        <section className="hp-sec" id="features">
-          <div className="hp-eyebrow">Powerful Features</div>
-          <h2 className="hp-sec-h">Everything you need to teach live.</h2>
-          <p className="hp-sec-sub">Built specifically for educators — not just a video call with a chat box.</p>
-          <div className="hp-ftabs">
-            {features.map((f,i)=>(
-  <button key={i} className={`hp-ftab ${activeFeature===i?'on':''}`}
-                onClick={()=>setActiveFeature(i)}
-                style={activeFeature===i?{background:`linear-gradient(135deg,${f.color}1A,${f.color}0D)`,borderColor:`${f.color}40`,color:f.color}:{}}
-              >{f.icon} {f.label}</button>
-            ))}
-          </div>
-          <TiltCard className="hp-fpanel">
-            <div className="hp-fpanel-glow" style={{background:af.color}}/>
-            <div style={{position:'relative',zIndex:1}}>
-              <div className="hp-ftag" style={{background:`${af.color}15`,color:af.color,border:`1px solid ${af.color}30`}}>
-                {['AI-Powered','Smart Board','Anti-Cheat','Unique Feature','Collaboration','Classroom Tool'][activeFeature]}
+            <form onSubmit={handleSignUpSubmit} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-white">Full Name</label>
+                <input
+                  type="text"
+                  placeholder="Prof. Elena Rostova"
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white text-sm focus:outline-none focus:border-[#18D5FD]"
+                />
               </div>
-              <div className="hp-ftitle">{af.title}</div>
-              <div className="hp-fdesc">{af.desc}</div>
-              <div className="hp-fpills">
-                {af.pills.map(p=>(
-                  <div key={p} className="hp-fpill" style={{background:`${af.color}12`,color:af.color,border:`1px solid ${af.color}25`}}>✓ {p}</div>
-                ))}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-white">Institutional Email</label>
+                <input
+                  type="email"
+                  placeholder="elena@university.edu"
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white text-sm focus:outline-none focus:border-[#18D5FD]"
+                />
               </div>
-              <MagBtn className="btn-f" onClick={onGetStarted} style={{background:`linear-gradient(135deg,${af.color},${af.color}cc)`,color:'#fff',boxShadow:`0 10px 26px ${af.color}40`}}>
-                Try {af.label} Free →
-              </MagBtn>
-            </div>
-            <div className="hp-fimg" style={{position:'relative',zIndex:1}}>
-              <img src={af.img} alt={af.title}/>
-              <div className="hp-fimg-shine"/>
-            </div>
-          </TiltCard>
-        </section>
-
-        {/* DEMO VIDEO */}
-        <div className="hp-demo" id="demo">
-          <div className="hp-eyebrow" style={{justifyContent:'center'}}>See It In Action</div>
-          <h2 className="hp-sec-h" style={{textAlign:'center',maxWidth:'none',marginBottom:10}}>Watch a real live class.</h2>
-          <p style={{fontSize:15,color:'var(--m)',textAlign:'center',marginBottom:32}}>See every feature working together in one real session.</p>
-          <div className="hp-demo-thumb" onClick={()=>setVideoOpen(true)}>
-            <img src="https://images.unsplash.com/photo-1552664730-d307ca884978?w=900&q=85&fit=crop" alt="Demo"/>
-            <div className="hp-demo-over">
-              <div className="hp-play">▶</div>
-              <div className="hp-play-lbl">Watch Full Demo — 3 min</div>
-            </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-white">Academic Role</label>
+                <select className="w-full px-4 py-2.5 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white text-sm focus:outline-none focus:border-[#18D5FD]">
+                  <option>Professor / Instructor</option>
+                  <option>Department Administrator</option>
+                  <option>Student Cohort Lead</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="btn-cyan mt-4 w-full py-3.5 rounded-full text-[#001324] font-bold text-sm tracking-wide"
+              >
+                Create Free Academic Workspace
+              </button>
+              <p className="text-xs text-center text-slate-400 mt-2">Zero credit card required • Instant WebRTC setup</p>
+            </form>
           </div>
         </div>
+      )}
 
-        {/* HOW IT WORKS */}
-        <section className="hp-sec" id="how" style={{paddingTop:0}}>
-          <div className="hp-eyebrow">How It Works</div>
-          <h2 className="hp-sec-h">Up and running in 60 seconds.</h2>
-          <div className="hp-steps">
-            {[
-              {n:'01',t:'Create Account',d:'Sign up with Google. Choose Teacher or Student. Dashboard ready instantly.'},
-              {n:'02',t:'Schedule or Join',d:'Teachers create class in one click. Students join via link — no downloads.'},
-              {n:'03',t:'Go Live',d:'HD video, AI attendance, whiteboard, quizzes — all tools ready the moment class starts.'},
-              {n:'04',t:'Track Everything',d:'Attendance logs, quiz scores, recordings — all auto-saved and exported to Excel.'},
-            ].map(s=>(
-              <div className="hp-step" key={s.n}>
-                <div className="hp-step-num">{s.n}</div>
-                <h4>{s.t}</h4><p>{s.d}</p>
+      {/* ── MODAL: JOIN CLASS ── */}
+      {joinClassModalOpen && (
+        <div
+          className="modal-backdrop open fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#000E1D]/85 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setJoinClassModalOpen(false);
+          }}
+        >
+          <div className="modal-box w-full max-w-md p-8 rounded-2xl bg-[#031526] border border-[#18D5FD]/50 shadow-2xl text-white">
+            <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#18D5FD]/30">
+              <h3 className="text-xl font-bold text-white">Join Live Classroom</h3>
+              <button
+                type="button"
+                className="modal-close text-2xl text-[#18D5FD] hover:text-white"
+                onClick={() => setJoinClassModalOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleJoinClassSubmit} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-white">Class Room Code</label>
+                <input
+                  type="text"
+                  value={joinRoomCode}
+                  onChange={(e) => setJoinRoomCode(e.target.value)}
+                  placeholder="e.g. CM-8429-XQ"
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white text-sm font-mono uppercase focus:outline-none focus:border-[#18D5FD]"
+                />
               </div>
-            ))}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-white">Your Name (For Roll Call)</label>
+                <input
+                  type="text"
+                  value={joinStudentName}
+                  onChange={(e) => setJoinStudentName(e.target.value)}
+                  placeholder="Liam Vance"
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#000E1D] border border-[#18D5FD]/40 text-white text-sm focus:outline-none focus:border-[#18D5FD]"
+                />
+              </div>
+              <button
+                type="submit"
+                className="btn-cyan mt-4 w-full py-3.5 rounded-full text-[#001324] font-bold text-sm tracking-wide"
+              >
+                Connect via WebRTC Mesh
+              </button>
+            </form>
           </div>
-        </section>
+        </div>
+      )}
 
-        {/* TESTIMONIALS */}
-        <section className="hp-sec" id="reviews" style={{paddingTop:0}}>
-          <div className="hp-eyebrow">Testimonials</div>
-          <h2 className="hp-sec-h">Loved by teachers and students.</h2>
-          <div className="hp-tgrid">
-            {[
-              {n:'Dr. Ayesha Rahman',r:'University Lecturer, BUET',av:'AR',c:'#2563EB',t:'The AI attendance alone saves me 15 minutes every class. The private viva room is something I have never seen on any other platform.'},
-              {n:'Tanvir Ahmed',r:'Student, NSU',av:'TA',c:'#0D9488',t:'The smart whiteboard actually feels like a real classroom board. I can follow every lesson perfectly from home.'},
-              {n:'Ms. Fatema Khanam',r:'School Teacher, Dhaka',av:'FK',c:'#7C3AED',t:'PDF viewer and breakout rooms changed how I teach. My students are more engaged than they have ever been.'},
-            ].map((t,i)=>(
-              <TiltCard className="hp-tcard" key={i}>
-                <div className="hp-tstars">★★★★★</div>
-                <p className="hp-ttext">"{t.t}"</p>
-                <div className="hp-tfoot">
-                  <div className="hp-tav" style={{background:`${t.c}1A`,color:t.c}}>{t.av}</div>
-                  <div><div className="hp-tname">{t.n}</div><div className="hp-trole">{t.r}</div></div>
+      {/* ── MODAL: WATCH DEMO ── */}
+      {demoModalOpen && (
+        <div
+          className="modal-backdrop open fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#000E1D]/90 backdrop-blur-md"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDemoModalOpen(false);
+          }}
+        >
+          <div className="modal-box w-full max-w-3xl p-6 sm:p-8 rounded-2xl bg-[#031526] border border-[#18D5FD]/50 shadow-2xl text-white">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#18D5FD]/30">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+                <h3 className="text-lg font-bold text-white">ClassMeet Live Demo Preview</h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close text-2xl text-[#18D5FD] hover:text-white"
+                onClick={() => setDemoModalOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+            <div className="relative rounded-xl overflow-hidden bg-[#000E1D] border border-[#18D5FD]/30 aspect-video flex items-center justify-center group">
+              <img
+                src="/laptop_final_perfect.png"
+                alt="ClassMeet Live Demo Session"
+                className="w-full h-full object-cover opacity-85"
+              />
+              <div className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center p-6 text-center">
+                <div
+                  onClick={() => showToast('Playing Classroom Demo Stream...')}
+                  className="w-16 h-16 rounded-full bg-[#18D5FD] text-[#001324] flex items-center justify-center text-2xl font-bold shadow-[0_0_30px_rgba(24,213,253,0.7)] hover:scale-110 transition-transform cursor-pointer"
+                >
+                  ▶
                 </div>
-              </TiltCard>
-            ))}
-          </div>
-        </section>
-
-        {/* INTEGRATIONS */}
-        <section className="hp-sec" style={{paddingTop:0,textAlign:'center'}}>
-          <div className="hp-eyebrow" style={{justifyContent:'center'}}>Integrations</div>
-          <h2 className="hp-sec-h" style={{textAlign:'center',maxWidth:'none'}}>Fits your existing workflow.</h2>
-          <div className="hp-ints">
-            {['📊 Excel Export','📁 Google Drive','📧 Email Alerts','🔔 Notifications','📱 Mobile Ready','🔐 Google SSO','📋 PDF Viewer','🎬 Auto Recording'].map(x=>(
-              <div className="hp-int" key={x}>{x}</div>
-            ))}
-          </div>
-        </section>
-
-        {/* FINAL CTA */}
-        <div className="hp-cta">
-          <div className="hp-cta-grid"/>
-          <h2>Start your first live<br/>class today.</h2>
-          <p>Free forever for small classes. No credit card required.</p>
-          <div className="hp-cta-btns">
-            <MagBtn className="btn-hero-primary" onClick={onGetStarted} style={{fontSize:16,padding:'18px 52px'}}>▶ Get Started Free</MagBtn>
-            <MagBtn className="btn-hero-ghost" onClick={()=>setVideoOpen(true)} style={{fontSize:16,padding:'18px 40px'}}>▷ Watch Demo</MagBtn>
+                <p className="mt-4 text-white font-semibold text-lg">Interactive Smart Classroom Session</p>
+                <p className="text-xs text-slate-300 mt-1">Eye-Blink Verification • Real-Time Excalidraw • 3-Strike Proctoring</p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="btn-cyan px-6 py-2.5 rounded-full text-[#001324] font-bold text-sm"
+                onClick={() => setDemoModalOpen(false)}
+              >
+                Close Preview
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        <footer>
-          <a href="/" className="hp-logo"><img src={logo} alt="ClassMeet" style={{height:'32px',width:'auto'}} /><span className="hp-logo-name" style={{fontSize:17}}>ClassMeet</span></a>
-          <div className="fp-links">
-            {['Privacy','Terms','Contact','Blog','Docs'].map(l=><a href="#" key={l}>{l}</a>)}
+      {/* ── Toast Notifications Hub ── */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast-msg">
+            {t.msg}
           </div>
-          <span>© 2025 ClassMeet. Built for learners, everywhere.</span>
-        </footer>
+        ))}
       </div>
-    </>
+    </div>
   );
 };
 

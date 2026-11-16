@@ -12,6 +12,8 @@ const quizRoutes = require('./routes/quizRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const breakoutRoutes = require('./routes/breakoutRoutes');
 
+const path = require('path');
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 console.log('[Startup] Environment loaded');
 

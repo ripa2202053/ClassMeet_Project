@@ -1,14 +1,18 @@
 const Room = require('../models/Room');
 const Attendance = require('../models/Attendance');
+const User = require('../models/User');
 
 const createRoom = async (req, res) => {
   try {
     const { title, duration } = req.body;
 
+    const teacher = await User.findById(req.user._id);
+
     const room = await Room.create({
       title,
       teacher: req.user._id,
-      duration: duration || 60
+      duration: duration || 60,
+      roomSettings: teacher?.defaultSettings || {},
     });
 
     res.status(201).json(room);

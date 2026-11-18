@@ -11,7 +11,56 @@ const userSchema = new mongoose.Schema({
     default: 'student'
   },
   resetPasswordOtp: { type: String },
-  resetPasswordExpires: { type: Date }
+  resetPasswordExpires: { type: Date },
+  defaultSettings: {
+    type: Object,
+    default: {
+      profile: {
+        fullName: '',
+        designation: 'Lecturer',
+        department: '',
+        institution: '',
+        email: '',
+        currentPassword: '',
+        newPassword: '',
+        googleConnected: false,
+      },
+      general: {
+        waitingRoom: true,
+        muteOnEntry: true,
+        cameraOffOnEntry: false,
+        whiteboardPermission: 'View Only',
+        lockPdfNavigation: true,
+        chatMode: 'Public & Private',
+      },
+      ai: {
+        attendanceTracking: true,
+        presenceThreshold: 75,
+        inattentivenessThreshold: '20 seconds',
+        audioOnlyException: true,
+      },
+      exam: {
+        fullscreenEnforcement: true,
+        tabSwitchLimit: 2,
+        deviceDetection: true,
+        randomizeQuestions: true,
+        autoSubmitTimer: true,
+      },
+      reports: {
+        autoExcelReport: true,
+        reportColumns: {
+          attendanceStatus: true,
+          engagementScore: true,
+          tabSwitchLogs: true,
+          phoneAlerts: true,
+          quizMarks: true,
+        },
+        camera: 'Default Camera',
+        microphone: 'Default Microphone',
+        speaker: 'Default Speaker',
+      },
+    },
+  },
 }, { timestamps: true });
 
 userSchema.methods.matchPassword = async function(enteredPassword) {

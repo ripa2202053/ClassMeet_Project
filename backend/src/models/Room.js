@@ -27,7 +27,17 @@ const roomSchema = new mongoose.Schema({
   duration: {
     type: Number,
     default: 60
-  }
+  },
+  roomSettings: {
+    type: Object,
+    default: {},
+  },
+  exemptedStudents: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  ],
 }, { timestamps: true });
 
 roomSchema.pre('save', function() {

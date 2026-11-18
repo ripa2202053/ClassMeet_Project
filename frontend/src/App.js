@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
 import TeacherDashboard from './pages/TeacherDashboard';
+import TeacherSettings from './pages/TeacherSettings';
 import StudentDashboard from './pages/StudentDashboard';
 import Room from './pages/Room';
 import AttendanceReport from './pages/AttendanceReport';
@@ -67,6 +68,14 @@ const App = () => {
             element={
               <PrivateRoute role="teacher">
                 <AttendanceReport />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/teacher-settings"
+            element={
+              <PrivateRoute role="teacher">
+                <TeacherSettings />
               </PrivateRoute>
             }
           />

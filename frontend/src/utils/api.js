@@ -31,3 +31,5 @@ export const getMyRooms = () => API.get('/rooms/my-rooms');
 export const googleLogin = (data) => API.post('/auth/google', data);
 export const forgotPassword = (data) => API.post('/auth/forgot-password', data);
 export const resetPassword = (data) => API.post('/auth/reset-password', data);
+
+export default API;

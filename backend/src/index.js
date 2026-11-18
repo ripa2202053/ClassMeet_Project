@@ -11,6 +11,7 @@ const exportRoutes = require('./routes/exportRoutes');
 const quizRoutes = require('./routes/quizRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const breakoutRoutes = require('./routes/breakoutRoutes');
+const teacherRoutes = require('./routes/teacherRoutes');
 
 const path = require('path');
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -33,6 +34,7 @@ app.use('/api/export', exportRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/breakout', breakoutRoutes);
+app.use('/api/teacher', teacherRoutes);
 
 app.get('/', (_req, res) => res.send('Live Class API Running...'));
 
@@ -62,11 +64,15 @@ async function ensureRoomTracked(roomId) {
 
   let startTime = Date.now();
   let duration = 60;
+  let roomSettings = {};
+  let exemptedStudents = [];
   try {
     const room = await Room.findById(roomId);
     if (room) {
       if (room.startTime) startTime = new Date(room.startTime).getTime();
       if (room.duration) duration = room.duration;
+      if (room.roomSettings) roomSettings = room.roomSettings;
+      if (room.exemptedStudents) exemptedStudents = room.exemptedStudents.map(id => id.toString());
     }
   } catch (err) {
     console.error('[Attendance] Failed to load room:', err.message);
@@ -78,6 +84,8 @@ async function ensureRoomTracked(roomId) {
     teacherSocket: null,
     students: new Map(),
     participants: new Map(),
+    roomSettings,
+    exemptedStudents,
   };
   activeRooms.set(roomId, entry);
   return entry;
@@ -168,6 +176,8 @@ io.on('connection', (socket) => {
     // KEY EVENT: Send the full list of existing users back to the joiner.
     socket.emit('all-users', existingUsers);
     socket.emit('room:participants', existingUsers);
+    socket.emit('room:settings', room.roomSettings || {});
+    socket.emit('room:exempted', room.exemptedStudents || []);
 
     if (room.activePdf) {
       socket.emit('pdf-shared', room.activePdf);
@@ -493,6 +503,44 @@ io.on('connection', (socket) => {
   // 'disconnect'. socket.rooms is { socket.id } at this point. We iterate
   // activeRooms (our source of truth) and use io.to() for reliable broadcast.
   // ─────────────────────────────────────────────────────────────────────────
+  socket.on('update-room-settings', async ({ roomId, settings }) => {
+    const room = activeRooms.get(roomId);
+    const merged = { ...(room?.roomSettings || {}), ...(settings || {}) };
+    if (merged?.general?.cameraOffOnEntry === true) {
+      merged.ai = { ...(merged.ai || {}), attendanceTracking: false };
+    }
+    if (room) {
+      room.roomSettings = merged;
+    }
+    try {
+      await Room.findByIdAndUpdate(roomId, { roomSettings: merged });
+    } catch (err) {
+      console.error('[Settings] Failed to persist roomSettings:', err.message);
+    }
+    io.to(roomId).emit('room:settings', merged);
+  });
+
+  socket.on('toggle-student-camera-exemption', async ({ roomId, studentId, exempt }) => {
+    const room = activeRooms.get(roomId);
+    if (room) {
+      const set = new Set(room.exemptedStudents || []);
+      if (exempt) set.add(String(studentId)); else set.delete(String(studentId));
+      room.exemptedStudents = Array.from(set);
+    }
+    try {
+      const r = await Room.findById(roomId);
+      if (r) {
+        const set = new Set((r.exemptedStudents || []).map(id => id.toString()));
+        if (exempt) set.add(String(studentId)); else set.delete(String(studentId));
+        r.exemptedStudents = Array.from(set);
+        await r.save();
+      }
+    } catch (err) {
+      console.error('[Exemption] Failed to persist:', err.message);
+    }
+    io.to(roomId).emit('room:exempted', room ? room.exemptedStudents : []);
+  });
+
   socket.on('disconnect', () => {
     console.log(`[Socket] Disconnected: ${socket.id}`);
 

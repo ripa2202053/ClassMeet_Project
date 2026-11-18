@@ -97,6 +97,7 @@ const VideoRoom = forwardRef(({
   const [peers, setPeers] = useState([]);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+const [roomSettings, setRoomSettings] = useState(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [remoteScreenShareSocketId, setRemoteScreenShareSocketId] = useState(null);
   const [localStream, setLocalStream] = useState(null);
@@ -474,6 +475,10 @@ const VideoRoom = forwardRef(({
     socket.on('whiteboard-started', onWhiteboardStarted);
     socket.on('screen-share-started', onScreenShareStarted);
     socket.on('screen-share-stopped', onScreenShareStopped);
+    const onRoomSettings = (settings) => setRoomSettings(settings || null);
+    const onRoomExempted = () => {};
+    socket.on('room:settings', onRoomSettings);
+    socket.on('room:exempted', onRoomExempted);
 
     const onUserMuted = ({ socketId, muted }) => {
       setRemoteStatuses((prev) => ({ ...prev, [socketId]: { ...prev[socketId], muted } }));
@@ -630,6 +635,7 @@ const VideoRoom = forwardRef(({
       socket.off('whiteboard-started', onWhiteboardStarted);
       socket.off('screen-share-started', onScreenShareStarted);
       socket.off('screen-share-stopped', onScreenShareStopped);
+      socket.off('room:settings', onRoomSettings);
       socket.off('user-muted', onUserMuted);
       socket.off('user-camera', onUserCamera);
       socket.off('mute-all', onMuteAll);
@@ -1270,7 +1276,7 @@ const VideoRoom = forwardRef(({
   return (
     <div style={S.container}>
       {/* ── Headless Face Detection (Runs continuously across all views including Presentation) ── */}
-      {user?.role === 'student' && localStream && !isKicked && (
+      {user?.role === 'student' && localStream && !isKicked && roomSettings?.general?.cameraOffOnEntry !== true && roomSettings?.ai?.attendanceTracking !== false && (
         <FaceDetection stream={localStream} onFaceDetected={handleFaceDetected} />
       )}
 

@@ -28,6 +28,12 @@ const roomSchema = new mongoose.Schema({
     type: Number,
     default: 60
   },
+  subject: { type: String, default: '' },
+  section: { type: String, default: '' },
+  archived: { type: Boolean, default: false },
+  joinLink: {
+    type: String,
+  },
   roomSettings: {
     type: Object,
     default: {},
@@ -43,6 +49,10 @@ const roomSchema = new mongoose.Schema({
 roomSchema.pre('save', function() {
   if (!this.roomCode) {
     this.roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  }
+  if (!this.joinLink) {
+    const base = process.env.FRONTEND_URL || 'http://localhost:3000';
+    this.joinLink = `${base}/join/${this.roomCode}`;
   }
 });
 

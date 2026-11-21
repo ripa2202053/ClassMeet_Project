@@ -12,6 +12,8 @@ const quizRoutes = require('./routes/quizRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const breakoutRoutes = require('./routes/breakoutRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
+const announcementRoutes = require('./routes/announcementRoutes');
+const classworkRoutes = require('./routes/classworkRoutes');
 
 const path = require('path');
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -35,6 +37,8 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/breakout', breakoutRoutes);
 app.use('/api/teacher', teacherRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/classwork', classworkRoutes);
 
 app.get('/', (_req, res) => res.send('Live Class API Running...'));
 

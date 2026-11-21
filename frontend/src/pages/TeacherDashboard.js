@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import API from '../utils/api';
 import { FiHome, FiBookOpen, FiCalendar, FiUsers, FiBarChart2, FiBell, FiSettings, FiHelpCircle, FiUser, FiSearch, FiChevronDown, FiLogOut } from 'react-icons/fi';
 import TeacherSettings from './TeacherSettings';
 import AccountView from './AccountView';
 import SettingsView from './SettingsView';
 import HelpSupportView from './HelpSupportView';
+import NotificationsView from './NotificationsView';
+import ClassroomWorkspace from './ClassroomWorkspace';
+import AutomatedAttendanceView from './AutomatedAttendanceView';
 import { createRoom, getMyRooms, startRoom } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -18,9 +22,8 @@ const NAV_SECTIONS = [
       { id: 'dashboard',     label: 'Dashboard',             icon: FiHome,      subs: [] },
       { id: 'classes',       label: 'My Classes',            icon: FiBookOpen,  subs: ['Create Class', 'Manage Classes', 'Live Classroom', 'Class Recordings'] },
       { id: 'schedule',      label: 'Schedule',              icon: FiCalendar,  subs: ['Calendar', 'Upcoming Classes'] },
-      { id: 'students',      label: 'Students',              icon: FiUsers,     subs: ['Student List', 'Student Profiles'] },
-      { id: 'attendance',    label: 'Attendance & Reports',  icon: FiBarChart2, subs: ['Automated Attendance', 'AI Proctoring', 'Engagement Reports', 'Export Excel / PDF'] },
-      { id: 'notifications', label: 'Notifications',         icon: FiBell,      subs: ['System Alerts', 'Student Alerts'] },
+      { id: 'attendance',    label: 'Attendance & Reports',  icon: FiBarChart2, subs: [] },
+      { id: 'notifications', label: 'Notifications',         icon: FiBell,      subs: [] },
     ],
   },
   {
@@ -76,6 +79,8 @@ const TeacherDashboard = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [unreadCount] = useState(3);
   const profileRef = useRef(null);
+  const [openClassMenu, setOpenClassMenu] = useState(null);
+  const [selectedClassroomId, setSelectedClassroomId] = useState(null);
   const [profilePic, setProfilePic] = useState(() => localStorage.getItem('profilePic') || null);
   const [profileName, setProfileName] = useState(() => (JSON.parse(localStorage.getItem('user') || '{}').name) || 'Educator');
   const [profileDesignation, setProfileDesignation] = useState(() => (JSON.parse(localStorage.getItem('user') || '{}').designation) || 'Lecturer');
@@ -83,7 +88,9 @@ const TeacherDashboard = () => {
   const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => { fetchRooms(); }, []);
+  const [showArchived, setShowArchived] = useState(false);
+
+  useEffect(() => { fetchRooms(showArchived); }, [showArchived]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -93,8 +100,8 @@ const TeacherDashboard = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const fetchRooms = async () => {
-    try { const { data } = await getMyRooms(); setRooms(data); }
+  const fetchRooms = async (archived = showArchived) => {
+    try { const { data } = await getMyRooms(archived); setRooms(data); }
     catch (err) { console.error('Error fetching rooms:', err); }
   };
 
@@ -102,9 +109,10 @@ const TeacherDashboard = () => {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      await createRoom({ title, duration });
+      const { data } = await createRoom({ title, duration });
       setTitle(''); setDuration(60); setIsCustom(false); setShowModal(false);
       fetchRooms();
+      if (data?._id) navigate(`/room/${data._id}`);
     } catch (err) { setError(err.response?.data?.message || 'Failed to create room'); }
     setLoading(false);
   };
@@ -336,6 +344,7 @@ const TeacherDashboard = () => {
                 My Classes
               </div>
               <button className="cm-card-action" onClick={() => setShowModal(true)}>+ Create Class</button>
+              <button className="cm-card-action" onClick={() => setShowArchived(v => !v)}>{showArchived ? 'Show Active' : 'Show Archived'}</button>
             </div>
             {filteredRooms.length === 0 ? (
               <div className="cm-empty">
@@ -345,41 +354,45 @@ const TeacherDashboard = () => {
                 <button className="cm-empty-btn" onClick={() => setShowModal(true)}>+ Create First Class</button>
               </div>
             ) : (
-              <div className="cm-table-wrap">
-                <table className="cm-table">
-                  <thead>
-                    <tr>
-                      <th>Class Name</th>
-                      <th>Room Code</th>
-                      <th>Duration</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRooms.map(room => (
-                      <tr key={room._id}>
-                        <td><span className="cm-table-class-name">{room.title}</span></td>
-                        <td><span className="cm-table-code">{room.roomCode}</span></td>
-                        <td>{room.duration} min</td>
-                        <td>
-                          <span className={`cm-badge ${room.isActive ? 'live' : 'done'}`}>
-                            {room.isActive ? '● Live' : 'Completed'}
-                          </span>
-                        </td>
-                        <td>
-                          {room.isActive ? (
-                            <button className="cm-tbl-btn primary" onClick={() => navigate(`/room/${room._id}`)}>Enter →</button>
-                          ) : (
-                            <button className="cm-tbl-btn" onClick={() => handleStartRoom(room._id)}>▶ Start</button>
-                          )}
-                          <button className="cm-tbl-btn" onClick={() => handleViewAttendance(room._id)}>📊 Report</button>
-                          <button className="cm-tbl-btn" onClick={() => handleExportAttendance(room._id)}>📥 Excel</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+                {filteredRooms.map(room => (
+                  <div key={room._id} onClick={() => navigate(`/classrooms/${room._id}`)} style={{ cursor: 'pointer', position: 'relative', background: '#f0f6f8', border: '1.5px solid #c8d6dc', borderRadius: '20px', padding: '28px', minHeight: '120px', boxShadow: '0 4px 16px rgba(15,30,60,0.08)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #4E8EA2, #2563a8)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '18px', flexShrink: 0, overflow: 'hidden' }}>
+                        {profilePic ? (
+                          <img src={profilePic} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          (user?.name || 'T').charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '17px', lineHeight: 1.3 }}>{room.title}</div>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); setOpenClassMenu(openClassMenu === room._id ? null : room._id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#64748b', padding: 0, lineHeight: 1 }}>⋮</button>
+                  </div>
+                  {openClassMenu === room._id && (
+                    <div style={{ position: 'absolute', top: '60px', right: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 36px rgba(15,30,60,0.10)', padding: '12px', zIndex: 20, minWidth: '220px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Duration: {room.duration} min</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Code: {room.roomCode}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Join Link: {room.joinLink || `${window.location.origin}/join/${room.roomCode}`}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>Status: {room.isActive ? 'Live' : 'Completed'}</div>
+                      <button className="cm-tbl-btn primary" style={{ width: '100%', marginBottom: '6px' }} onClick={() => navigate(`/classrooms/${room._id}`)}>Open Classroom</button>
+                      <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => navigate(`/classrooms/${room._id}`)}>Edit Classroom</button>
+                      <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => { navigator.clipboard?.writeText(room.roomCode); }}>Copy Class Code</button>
+                      <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => { navigator.clipboard?.writeText(room.joinLink || `${window.location.origin}/join/${room.roomCode}`); }}>Copy Invitation Link</button>
+                      {room.isActive ? (
+                        <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => navigate(`/room/${room._id}`)}>Enter Live Class</button>
+                      ) : (
+                        <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => handleStartRoom(room._id)}>Start Class</button>
+                      )}
+                      <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => handleViewAttendance(room._id)}>View Report</button>
+                      <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={() => handleExportAttendance(room._id)}>Export Excel</button>
+                      <button className="cm-tbl-btn" style={{ width: '100%', marginBottom: '6px' }} onClick={async () => { try { if (room.archived) await API.put(`/rooms/${room._id}/restore`); else await API.put(`/rooms/${room._id}/archive`); fetchRooms(showArchived); setOpenClassMenu(null); } catch(e){ alert('Failed'); } }}>{room.archived ? 'Restore Classroom' : 'Archive Classroom'}</button>
+                      <button className="cm-tbl-btn" style={{ width: '100%', color: '#dc2626' }} onClick={async () => { if(!window.confirm('Delete classroom?')) return; try { await API.delete(`/rooms/${room._id}`); fetchRooms(showArchived); setOpenClassMenu(null); } catch(e){ alert('Failed'); } }}>Delete Classroom</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -433,82 +446,11 @@ const TeacherDashboard = () => {
 
       /* ───────── ATTENDANCE & REPORTS ───────── */
       case 'attendance':
-        return (
-          <>
-            <div className="cm-card" style={{ marginBottom: 20 }}>
-              <div className="cm-card-header">
-                <div className="cm-card-title"><div className="cm-card-title-icon">📊</div>Attendance & Reports</div>
-              </div>
-              <div className="cm-attendance-list">
-                {MOCK_ATTENDANCE.map((a, i) => (
-                  <div key={i} className="cm-att-row">
-                    <div className="cm-att-label">{a.label}</div>
-                    <div className="cm-att-bar-wrap">
-                      <div className={`cm-att-bar ${attClass(a.pct)}`} style={{ width: `${a.pct}%` }}></div>
-                    </div>
-                    <div className="cm-att-pct">{a.pct}%</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="cm-card">
-              <div className="cm-card-header">
-                <div className="cm-card-title"><div className="cm-card-title-icon">📥</div>Export Reports</div>
-              </div>
-              {filteredRooms.length === 0 ? (
-                <div className="cm-empty">
-                  <div className="cm-empty-icon">📂</div>
-                  <div className="cm-empty-title">No classes yet</div>
-                </div>
-              ) : (
-                <div className="cm-table-wrap">
-                  <table className="cm-table">
-                    <thead>
-                      <tr>
-                        <th>Class Name</th>
-                        <th>Code</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRooms.map(room => (
-                        <tr key={room._id}>
-                          <td><span className="cm-table-class-name">{room.title}</span></td>
-                          <td><span className="cm-table-code">{room.roomCode}</span></td>
-                          <td>
-                            <button className="cm-tbl-btn" onClick={() => handleViewAttendance(room._id)}>📊 View Report</button>
-                            <button className="cm-tbl-btn" onClick={() => handleExportAttendance(room._id)}>📥 Export Excel</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        );
+        return <AutomatedAttendanceView />;
 
       /* ───────── NOTIFICATIONS ───────── */
       case 'notifications':
-        return (
-          <div className="cm-card">
-            <div className="cm-card-header">
-              <div className="cm-card-title"><div className="cm-card-title-icon">🔔</div>Notifications</div>
-            </div>
-            <div className="cm-activity-list">
-              {MOCK_ACTIVITY.map((a, i) => (
-                <div key={i} className="cm-activity-item">
-                  <div className={`cm-activity-icon ${a.color}`}>{a.icon}</div>
-                  <div className="cm-activity-body">
-                    <div className="cm-activity-text">{a.text}</div>
-                    <div className="cm-activity-time">{a.time}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
+        return <NotificationsView onNavigate={setActiveTab} />;
 
       /* ───────── SETTINGS ───────── */
       case 'help':
@@ -517,6 +459,9 @@ const TeacherDashboard = () => {
         return <SettingsView />;
       case 'account':
         return <AccountView profilePic={profilePic} setProfilePic={setProfilePic} profileName={profileName} setProfileName={setProfileName} profileDesignation={profileDesignation} setProfileDesignation={setProfileDesignation} />;
+
+      case 'classroom':
+        return selectedClassroomId ? <ClassroomWorkspace classroomId={selectedClassroomId} onBack={() => setActiveTab('classes')} /> : null;
 
       default:
         return null;
@@ -736,7 +681,7 @@ const TeacherDashboard = () => {
               <div className="cm-modal-actions">
                 <button type="button" className="cm-modal-cancel" onClick={() => setShowModal(false)}>Cancel</button>
                 <button type="submit" className="cm-modal-submit" disabled={loading}>
-                  {loading ? 'Creating...' : '🚀 Launch Class'}
+                  {loading ? 'Creating...' : 'Launch Class'}
                 </button>
               </div>
             </form>

@@ -27,7 +27,7 @@ export const createRoom = (data) => API.post('/rooms/create', data);
 export const startRoom = (id) => API.put(`/rooms/start/${id}`);
 export const endRoom = (id) => API.put(`/rooms/end/${id}`);
 export const joinRoom = (data) => API.post('/rooms/join', data);
-export const getMyRooms = () => API.get('/rooms/my-rooms');
+export const getMyRooms = (archived = false) => API.get(`/rooms/my-rooms?archived=${archived}`);
 export const googleLogin = (data) => API.post('/auth/google', data);
 export const forgotPassword = (data) => API.post('/auth/forgot-password', data);
 export const resetPassword = (data) => API.post('/auth/reset-password', data);

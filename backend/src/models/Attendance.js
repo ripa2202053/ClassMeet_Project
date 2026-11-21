@@ -56,7 +56,16 @@ const attendanceSchema = new mongoose.Schema({
   isSuspicious: {
     type: Boolean,
     default: false
-  }
+  },
+  corrections: [
+    {
+      by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      at: { type: Date, default: Date.now },
+      reason: { type: String },
+      oldValue: { type: Boolean },
+      newValue: { type: Boolean },
+    },
+  ],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

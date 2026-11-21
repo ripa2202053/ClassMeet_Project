@@ -164,4 +164,31 @@ const getStudentAttendance = async (req, res) => {
   }
 };
 
-module.exports = { updateAttendance, leaveClass, finalizeAttendance, getRoomAttendance, getStudentAttendance };
+const correctAttendance = async (req, res) => {
+  try {
+    const { attendanceId, isPresent, reason } = req.body;
+    const att = await Attendance.findById(attendanceId);
+    if (!att) return res.status(404).json({ message: 'Attendance record not found' });
+
+    const room = await Room.findById(att.room);
+    if (!room || room.teacher.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    att.corrections.push({
+      by: req.user._id,
+      at: new Date(),
+      reason: reason || '',
+      oldValue: att.isPresent,
+      newValue: isPresent,
+    });
+    att.isPresent = isPresent;
+    await att.save();
+
+    res.json({ message: 'Attendance corrected', attendance: att });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { updateAttendance, leaveClass, finalizeAttendance, getRoomAttendance, getStudentAttendance, correctAttendance };

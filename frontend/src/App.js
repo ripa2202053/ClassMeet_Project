@@ -6,21 +6,16 @@ import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
 import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherSettings from './pages/TeacherSettings';
+import JoinClass from './pages/JoinClass';
+import ClassroomWorkspace from './pages/ClassroomWorkspace';
+import StudentClassroomWorkspace from './pages/StudentClassroomWorkspace';
 import StudentDashboard from './pages/StudentDashboard';
 import Room from './pages/Room';
 import AttendanceReport from './pages/AttendanceReport';
-import HomePage from './pages/HomePage';
-import { useNavigate } from 'react-router-dom';
+// Home page removed
 
-const HomePageWrapper = () => {
-  const navigate = useNavigate();
-  return (
-    <HomePage
-      onGetStarted={() => navigate('/register')}
-      onLogin={() => navigate('/login')}
-    />
-  );
-};
+
+// Home page removed
 
 const PrivateRoute = ({ children, role }) => {
   const { user } = useAuth();
@@ -34,7 +29,7 @@ const App = () => {
     <AuthProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<HomePageWrapper />} />
+          <Route path="/" element={<Navigate to="/login" />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -76,6 +71,30 @@ const App = () => {
             element={
               <PrivateRoute role="teacher">
                 <TeacherSettings />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/join/:code"
+            element={
+              <PrivateRoute>
+                <JoinClass />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/classrooms/:classroomId"
+            element={
+              <PrivateRoute role="teacher">
+                <ClassroomWorkspace />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/student-classroom/:classroomId"
+            element={
+              <PrivateRoute role="student">
+                <StudentClassroomWorkspace />
               </PrivateRoute>
             }
           />
